@@ -38,13 +38,11 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # 1. TimeGAN model
-from timegan import timegan
+from modules import timegan
 # 2. Data loading
-from data_loading import real_data_loading, sine_data_generation
+from dataset import real_data_loading
 # 3. Metrics
-from metrics.discriminative_metrics import discriminative_score_metrics
-from metrics.predictive_metrics import predictive_score_metrics
-from metrics.visualization_metrics import visualization
+from predict import visualization
 
 
 def main (args):
@@ -67,12 +65,8 @@ def main (args):
     - metric_results: discriminative and predictive scores
   """
   ## Data loading
-  if args.data_name in ['stock', 'energy']:
+  if args.data_name in ['message', 'orderbook']:
     ori_data = real_data_loading(args.data_name, args.seq_len)
-  elif args.data_name == 'sine':
-    # Set number of samples and its dimensions
-    no, dim = 10000, 5
-    ori_data = sine_data_generation(no, args.seq_len, dim)
     
   print(args.data_name + ' dataset is ready.')
     
@@ -90,27 +84,11 @@ def main (args):
   
   ## Performance metrics   
   # Output initialization
-  metric_results = dict()
-  
-  # 1. Discriminative Score
-  discriminative_score = list()
-  for _ in range(args.metric_iteration):
-    temp_disc = discriminative_score_metrics(ori_data, generated_data)
-    discriminative_score.append(temp_disc)
-      
-  metric_results['discriminative'] = np.mean(discriminative_score)
-      
-  # 2. Predictive score
-  predictive_score = list()
-  for tt in range(args.metric_iteration):
-    temp_pred = predictive_score_metrics(ori_data, generated_data)
-    predictive_score.append(temp_pred)   
-      
-  metric_results['predictive'] = np.mean(predictive_score)     
+  metric_results = dict()    
           
-  # 3. Visualization (PCA and tSNE)
-  visualization(ori_data, generated_data, 'pca')
-  visualization(ori_data, generated_data, 'tsne')
+  # 3. Visualization with KL divergence and SSIM
+  visualization(ori_data, generated_data)
+  visualization(ori_data, generated_data)
   
   ## Print discriminative and predictive scores
   print(metric_results)
@@ -124,8 +102,8 @@ if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.add_argument(
       '--data_name',
-      choices=['sine','stock','energy'],
-      default='stock',
+      choices=['message','orderbook'],
+      default='orderbook',
       type=str)
   parser.add_argument(
       '--seq_len',

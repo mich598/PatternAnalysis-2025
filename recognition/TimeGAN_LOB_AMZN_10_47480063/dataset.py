@@ -7,11 +7,10 @@ Neural Information Processing Systems (NeurIPS), 2019.
 
 Github Link: https://github.com/jsyoon0823/TimeGAN/blob/master/data_loading.py
 
-data_loading.py
+Based on data_loading.py
 
 (0) MinMaxScaler: Min Max normalizer
-(1) real_data_loading: Load and preprocess real data
-  - stock_data: https://finance.yahoo.com/quote/GOOG/history?p=GOOG
+(1) real_data_loading: Load and preprocess real data from message or orderbook
 """
 
 ## Necessary Packages
@@ -43,10 +42,10 @@ def real_data_loading (data_name, seq_len):
     Returns:
     - data: preprocessed data.
     """  
-    assert data_name in ['stock','orderbook']
+    assert data_name in ['message','orderbook']
 
     # Note: data is in chronological order (oldest entry at the top, newest at the bottom)
-    if data_name == 'stock':
+    if data_name == 'message':
         ori_data = np.loadtxt('amzn_message_data.csv', delimiter = ",")
     elif data_name == 'orderbook':
         ori_data = np.loadtxt('amzn_orderbook_data.csv', delimiter = ",")
