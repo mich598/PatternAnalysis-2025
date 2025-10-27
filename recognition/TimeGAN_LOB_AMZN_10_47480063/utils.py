@@ -6,8 +6,6 @@ Neural Information Processing Systems (NeurIPS), 2019.
 
 Github Link: https://github.com/jsyoon0823/TimeGAN/blob/master/data_loading.py
 
------------------------------
-
 Based on utils.py
 
 (1) train_test_divide: Divide train and test data for both original and synthetic data.
@@ -25,7 +23,7 @@ import torch.nn as nn
 
 def train_test_divide(data_x, data_x_hat, data_t, data_t_hat, train_rate=0.8):
     """Divide train and test data for both original and synthetic data.
-    
+
     Args:
         - data_x: original data
         - data_x_hat: generated data
@@ -38,32 +36,32 @@ def train_test_divide(data_x, data_x_hat, data_t, data_t_hat, train_rate=0.8):
     idx = np.random.permutation(no)
     train_idx = idx[:int(no * train_rate)]
     test_idx = idx[int(no * train_rate):]
-    
+
     train_x = [data_x[i] for i in train_idx]
     test_x = [data_x[i] for i in test_idx]
     train_t = [data_t[i] for i in train_idx]
-    test_t = [data_t[i] for i in test_idx]      
-    
+    test_t = [data_t[i] for i in test_idx]
+
     # Divide train/test index (synthetic data)
     no = len(data_x_hat)
     idx = np.random.permutation(no)
     train_idx = idx[:int(no * train_rate)]
     test_idx = idx[int(no * train_rate):]
-    
+
     train_x_hat = [data_x_hat[i] for i in train_idx]
     test_x_hat = [data_x_hat[i] for i in test_idx]
     train_t_hat = [data_t_hat[i] for i in train_idx]
     test_t_hat = [data_t_hat[i] for i in test_idx]
-    
+
     return train_x, train_x_hat, test_x, test_x_hat, train_t, train_t_hat, test_t, test_t_hat
 
 
 def extract_time(data):
     """Returns Maximum sequence length and each sequence length.
-    
+
     Args:
         - data: original data
-        
+
     Returns:
         - time: extracted time information
         - max_seq_len: maximum sequence length
@@ -79,16 +77,16 @@ def extract_time(data):
 
 def rnn_cell(module_name, hidden_dim):
     """Create a PyTorch RNN cell.
-    
+
     Args:
         - module_name: 'gru', 'lstm', or 'lstmLN'
         - hidden_dim: number of hidden units
-        
+
     Returns:
         - rnn_cell: RNN Cell module
     """
     assert module_name in ['gru', 'lstm', 'lstmLN']
-    
+
     if module_name == 'gru':
         rnn_cell = nn.GRUCell(input_size=hidden_dim, hidden_size=hidden_dim)
     elif module_name == 'lstm':
@@ -115,13 +113,13 @@ def rnn_cell(module_name, hidden_dim):
 
 def random_generator(batch_size, z_dim, T_mb, max_seq_len):
     """Random vector generation.
-    
+
     Args:
         - batch_size: size of the random vector
         - z_dim: dimension of random vector
         - T_mb: time information for the random vector
         - max_seq_len: maximum sequence length
-        
+
     Returns:
         - Z_mb: generated random vector
     """
@@ -136,12 +134,12 @@ def random_generator(batch_size, z_dim, T_mb, max_seq_len):
 
 def batch_generator(data, time, batch_size):
     """Mini-batch generator.
-    
+
     Args:
         - data: time-series data
         - time: time information
         - batch_size: number of samples per batch
-        
+
     Returns:
         - X_mb: time-series data batch
         - T_mb: time information batch
@@ -149,8 +147,8 @@ def batch_generator(data, time, batch_size):
     no = len(data)
     idx = np.random.permutation(no)
     train_idx = idx[:batch_size]
-    
+
     X_mb = [data[i] for i in train_idx]
     T_mb = [time[i] for i in train_idx]
-    
+
     return X_mb, T_mb

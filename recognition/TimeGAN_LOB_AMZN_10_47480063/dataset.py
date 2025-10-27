@@ -1,5 +1,5 @@
 """
-containing the data loader for loading and preprocessing your data
+“dataset.py" containing the data loader for loading and preprocessing your data
 
 Reference: Jinsung Yoon, Daniel Jarrett, Mihaela van der Schaar, 
 "Time-series Generative Adversarial Networks," 
@@ -16,13 +16,12 @@ Based on data_loading.py
 ## Necessary Packages
 import numpy as np
 
-
 def MinMaxScaler(data):
   """Min Max normalizer.
-  
+
   Args:
     - data: original data
-  
+
   Returns:
     - norm_data: normalized data
   """
@@ -30,7 +29,6 @@ def MinMaxScaler(data):
   denominator = np.max(data, 0) - np.min(data, 0)
   norm_data = numerator / (denominator + 1e-7)
   return norm_data
-    
 
 def real_data_loading (data_name, seq_len):
     """Load and preprocess real-world datasets.
@@ -41,29 +39,29 @@ def real_data_loading (data_name, seq_len):
 
     Returns:
     - data: preprocessed data.
-    """  
+    """
     assert data_name in ['message','orderbook']
 
     # Note: data is in chronological order (oldest entry at the top, newest at the bottom)
     if data_name == 'message':
-        ori_data = np.loadtxt('amzn_message_data.csv', delimiter = ",")
+        ori_data = np.loadtxt('/content/drive/MyDrive/amzn_message_data.csv', delimiter = ",")
     elif data_name == 'orderbook':
-        ori_data = np.loadtxt('amzn_orderbook_data.csv', delimiter = ",")
+        ori_data = np.loadtxt('/content/drive/MyDrive/amzn_orderbook_data.csv', delimiter = ",")
 
     # Normalize the data
     ori_data = MinMaxScaler(ori_data)
 
     # Preprocess the dataset
-    temp_data = []    
+    temp_data = []
     # Cut data by sequence length
     for i in range(0, len(ori_data) - seq_len):
         _x = ori_data[i:i + seq_len]
         temp_data.append(_x)
-        
+
     # Mix the datasets (to make it similar to independent and identically distributed)
-    idx = np.random.permutation(len(temp_data))    
+    idx = np.random.permutation(len(temp_data))
     data = []
     for i in range(len(temp_data)):
         data.append(temp_data[idx[i]])
-        
+
     return data

@@ -1,25 +1,17 @@
 """
-showing example usage of your trained model. 
+"predict.py" showing example usage of your trained model. 
 Print out any results and / or provide visualisations where applicable
 
  Distribution similarity: KL divergence 
 return distributions.
  0.1 between the generated and real spread and midprice
 Visual similarity: SSIM > 0.6 between heatmaps of generated vs real LOB depth snapshots.
-"""
-
-"""Time-series Generative Adversarial Networks (TimeGAN) Codebase.
 
 Reference: Jinsung Yoon, Daniel Jarrett, Mihaela van der Schaar, 
 "Time-series Generative Adversarial Networks," 
 Neural Information Processing Systems (NeurIPS), 2019.
 
-Paper link: https://papers.nips.cc/paper/8789-time-series-generative-adversarial-networks
-
-Last updated Date: April 24th 2020
-Code author: Jinsung Yoon (jsyoon0823@gmail.com)
-
------------------------------
+Github Link: https://github.com/jsyoon0823/TimeGAN/blob/master/data_loading.py
 
 Based on visualization_metrics.py
 
@@ -52,7 +44,7 @@ def visualization(ori_data, generated_data):
     # 1. Distribution Similarity (KL Divergence)
     # ----------------------------
 
-    # Example assumption: 
+    # Example assumption:
     # dim=0: best bid, dim=1: best ask, dim=2: midprice
     # Compute spread and midprice returns for both datasets
     def compute_spread_midret(data):

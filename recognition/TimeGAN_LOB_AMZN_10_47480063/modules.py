@@ -1,17 +1,12 @@
 """
 “modules.py" containing the source code of the components of your model. Each component must be
 implementated as a class or a function
-"""
-
-"""Time-series Generative Adversarial Networks (TimeGAN) Codebase.
 
 Reference: Jinsung Yoon, Daniel Jarrett, Mihaela van der Schaar, 
 "Time-series Generative Adversarial Networks," 
 Neural Information Processing Systems (NeurIPS), 2019.
 
 Github Link: https://github.com/jsyoon0823/TimeGAN/blob/master/data_loading.py
-
------------------------------
 
 Based on timegan.py code
 """
@@ -66,7 +61,7 @@ class Embedder(nn.Module):
 class Recovery(nn.Module):
     def __init__(self, module_name, hidden_dim, output_dim, num_layers):
         super().__init__()
-        self.rnn = create_rnn(module_name, hidden_dim, num_layers)
+        self.rnn = create_rnn(module_name, hidden_dim, hidden_dim, num_layers)
         self.fc = nn.Sequential(
             nn.Linear(hidden_dim, output_dim),
             nn.Sigmoid()
@@ -123,13 +118,13 @@ class Discriminator(nn.Module):
 def timegan(ori_data, parameters, device=None):
     """
     PyTorch reimplementation of TimeGAN
-    
+
     Args:
       - ori_data: list or numpy array shaped (no, variable_seq_len, dim) or padded array (no, max_seq_len, dim)
       - parameters: dict with keys:
           'hidden_dim', 'num_layer', 'iterations', 'batch_size', 'module'
       - device: 'cpu' or 'cuda'
-      
+
     Returns:
       - generated_data: list of numpy arrays, each sequence renormalized to original scale
     """

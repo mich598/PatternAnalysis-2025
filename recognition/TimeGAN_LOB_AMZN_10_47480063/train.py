@@ -2,22 +2,14 @@
 containing the source code for training, validating, testing and saving your model. The model
 should be imported from “modules.py” and the data loader should be imported from “dataset.py”. Make
 sure to plot the losses and metrics during training
-"""
-
-"""Time-series Generative Adversarial Networks (TimeGAN) Codebase.
 
 Reference: Jinsung Yoon, Daniel Jarrett, Mihaela van der Schaar, 
 "Time-series Generative Adversarial Networks," 
 Neural Information Processing Systems (NeurIPS), 2019.
 
-Paper link: https://papers.nips.cc/paper/8789-time-series-generative-adversarial-networks
+Github Link: https://github.com/jsyoon0823/TimeGAN/blob/master/data_loading.py
 
-Last updated Date: April 24th 2020
-Code author: Jinsung Yoon (jsyoon0823@gmail.com)
-
------------------------------
-
-main_timegan.py
+Based on main_timegan.py
 
 (1) Import data
 (2) Generate synthetic data
@@ -44,104 +36,56 @@ from dataset import real_data_loading
 # 3. Metrics
 from predict import visualization
 
+def main ():
+    """Main function for timeGAN experiments.
 
-def main (args):
-  """Main function for timeGAN experiments.
-  
-  Args:
-    - data_name: sine, stock, or energy
-    - seq_len: sequence length
-    - Network parameters (should be optimized for different datasets)
-      - module: gru, lstm, or lstmLN
-      - hidden_dim: hidden dimensions
-      - num_layer: number of layers
-      - iteration: number of training iterations
-      - batch_size: the number of samples in each batch
-    - metric_iteration: number of iterations for metric computation
-  
-  Returns:
-    - ori_data: original data
-    - generated_data: generated synthetic data
-    - metric_results: discriminative and predictive scores
-  """
-  ## Data loading
-  if args.data_name in ['message', 'orderbook']:
-    ori_data = real_data_loading(args.data_name, args.seq_len)
-    
-  print(args.data_name + ' dataset is ready.')
-    
-  ## Synthetic data generation by TimeGAN
-  # Set newtork parameters
-  parameters = dict()  
-  parameters['module'] = args.module
-  parameters['hidden_dim'] = args.hidden_dim
-  parameters['num_layer'] = args.num_layer
-  parameters['iterations'] = args.iteration
-  parameters['batch_size'] = args.batch_size
-      
-  generated_data = timegan(ori_data, parameters)   
-  print('Finish Synthetic Data Generation')
-  
-  ## Performance metrics   
-  # Output initialization
-  metric_results = dict()    
-          
-  # 3. Visualization with KL divergence and SSIM
-  visualization(ori_data, generated_data)
-  visualization(ori_data, generated_data)
-  
-  ## Print discriminative and predictive scores
-  print(metric_results)
+    Args:
+        - data_name: sine, stock, or energy
+        - seq_len: sequence length
+        - Network parameters (should be optimized for different datasets)
+        - module: gru, lstm, or lstmLN
+        - hidden_dim: hidden dimensions
+        - num_layer: number of layers
+        - iteration: number of training iterations
+        - batch_size: the number of samples in each batch
+        - metric_iteration: number of iterations for metric computation
 
-  return ori_data, generated_data, metric_results
+    Returns:
+        - ori_data: original data
+        - generated_data: generated synthetic data
+        - metric_results: discriminative and predictive scores
+    """
+    ## Data loading
+    ori_data = real_data_loading('orderbook', 24)
+
+    print('orderbook dataset is ready.')
+
+    ## Synthetic data generation by TimeGAN
+    # Set newtork parameters
+    parameters = dict()
+    parameters['module'] = 'gru'
+    parameters['hidden_dim'] = 24
+    parameters['num_layer'] = 3
+    parameters['iterations'] = 100
+    parameters['batch_size'] = 128
+
+    generated_data = timegan(ori_data, parameters)
+    print('Finish Synthetic Data Generation')
+
+    ## Performance metrics
+    # Output initialization
+    metric_results = dict()
+
+    # 3. Visualization with KL divergence and SSIM
+    visualization(ori_data, generated_data)
+    visualization(ori_data, generated_data)
+
+    ## Print discriminative and predictive scores
+    print(metric_results)
+
+    return ori_data, generated_data, metric_results
 
 
-if __name__ == '__main__':  
-  
-  # Inputs for the main function
-  parser = argparse.ArgumentParser()
-  parser.add_argument(
-      '--data_name',
-      choices=['message','orderbook'],
-      default='orderbook',
-      type=str)
-  parser.add_argument(
-      '--seq_len',
-      help='sequence length',
-      default=24,
-      type=int)
-  parser.add_argument(
-      '--module',
-      choices=['gru','lstm','lstmLN'],
-      default='gru',
-      type=str)
-  parser.add_argument(
-      '--hidden_dim',
-      help='hidden state dimensions (should be optimized)',
-      default=24,
-      type=int)
-  parser.add_argument(
-      '--num_layer',
-      help='number of layers (should be optimized)',
-      default=3,
-      type=int)
-  parser.add_argument(
-      '--iteration',
-      help='Training iterations (should be optimized)',
-      default=50000,
-      type=int)
-  parser.add_argument(
-      '--batch_size',
-      help='the number of samples in mini-batch (should be optimized)',
-      default=128,
-      type=int)
-  parser.add_argument(
-      '--metric_iteration',
-      help='iterations of the metric computation',
-      default=10,
-      type=int)
-  
-  args = parser.parse_args() 
-  
-  # Calls main function  
-  ori_data, generated_data, metrics = main(args)
+if __name__ == '__main__':
+    # Calls main function
+    ori_data, generated_data, metrics = main()
