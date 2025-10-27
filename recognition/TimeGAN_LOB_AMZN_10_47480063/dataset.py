@@ -34,38 +34,37 @@ def MinMaxScaler(data):
     
 
 def real_data_loading (data_name, seq_len):
-  """Load and preprocess real-world datasets.
-  
-  Args:
-    - data_name: stock or energy
+    """Load and preprocess real-world datasets.
+
+    Args:
+    - data_name: message or orderbook
     - seq_len: sequence length
-    
-  Returns:
+
+    Returns:
     - data: preprocessed data.
-  """  
-  assert data_name in ['stock','energy']
-  
-  if data_name == 'stock':
-    ori_data = np.loadtxt('data/stock_data.csv', delimiter = ",",skiprows = 1)
-  elif data_name == 'energy':
-    ori_data = np.loadtxt('data/energy_data.csv', delimiter = ",",skiprows = 1)
+    """  
+    assert data_name in ['stock','orderbook']
+
+    # Note: data is in chronological order (oldest entry at the top, newest at the bottom)
+    if data_name == 'stock':
+        ori_data = np.loadtxt('amzn_message_data.csv', delimiter = ",")
+    elif data_name == 'orderbook':
+        ori_data = np.loadtxt('amzn_orderbook_data.csv', delimiter = ",")
+
+    # Normalize the data
+    ori_data = MinMaxScaler(ori_data)
+
+    # Preprocess the dataset
+    temp_data = []    
+    # Cut data by sequence length
+    for i in range(0, len(ori_data) - seq_len):
+        _x = ori_data[i:i + seq_len]
+        temp_data.append(_x)
         
-  # Flip the data to make chronological data
-  ori_data = ori_data[::-1]
-  # Normalize the data
-  ori_data = MinMaxScaler(ori_data)
-    
-  # Preprocess the dataset
-  temp_data = []    
-  # Cut data by sequence length
-  for i in range(0, len(ori_data) - seq_len):
-    _x = ori_data[i:i + seq_len]
-    temp_data.append(_x)
+    # Mix the datasets (to make it similar to independent and identically distributed)
+    idx = np.random.permutation(len(temp_data))    
+    data = []
+    for i in range(len(temp_data)):
+        data.append(temp_data[idx[i]])
         
-  # Mix the datasets (to make it similar to i.i.d)
-  idx = np.random.permutation(len(temp_data))    
-  data = []
-  for i in range(len(temp_data)):
-    data.append(temp_data[idx[i]])
-    
-  return data
+    return data
