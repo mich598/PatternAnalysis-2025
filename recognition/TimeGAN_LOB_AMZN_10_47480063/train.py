@@ -55,10 +55,12 @@ def main ():
     # Set network parameters
     parameters = dict()
     parameters['module'] = 'gru'
-    parameters['hidden_dim'] = 48 
+    parameters['hidden_dim'] = 32
     parameters['num_layer'] = 2 
-    parameters['iterations'] = 9000 
     parameters['batch_size'] = 128
+    parameters['iterations'] = 7000
+    parameters['iterations_supervise'] = 10000
+    parameters['lr_supervised'] = 2e-4
 
     generated_data = timegan(ori_data, parameters)
     print('Finish Synthetic Data Generation')
