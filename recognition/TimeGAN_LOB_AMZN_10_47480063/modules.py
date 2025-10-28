@@ -25,7 +25,6 @@ from utils import extract_time, random_generator, batch_generator
 import torch.backends.cudnn as cudnn
 cudnn.enabled = False  # avoid CuDNN double-backward errors
 
-
 # -------------------------
 # Helper utilities
 # -------------------------
@@ -37,7 +36,6 @@ def create_rnn(module_name, input_size, hidden_size, num_layers, batch_first=Tru
         return nn.LSTM(input_size, hidden_size, num_layers, batch_first=batch_first)
     else:
         return nn.RNN(input_size, hidden_size, num_layers, nonlinearity="tanh", batch_first=batch_first)
-
 
 def sequence_mask(lengths, max_len=None, device=None):
     if max_len is None:
@@ -253,7 +251,7 @@ def timegan(ori_data, parameters, device=None):
 
         if itt % 500 == 0:
             print(f"supervised step:{itt}/{iterations_supervise}, s_loss:{loss_s.item()**0.5:.4f}")  # sqrt to match your display
-    
+
     print("Finish Supervised Training")
 
     # -------------------------
