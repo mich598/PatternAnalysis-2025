@@ -12,7 +12,7 @@ The model is divided into 5 main modules: \
 	2. **Recovery**: converts latent representation into reconstructed sequence\
 	3. **Generator**: converts random noise into latent representation\
 	4. **Supervisor**: helps the generator learn temporal dependencies\
-	5. **Discriminator**: distinguishes real and fake latent sequences\
+	5. **Discriminator**: distinguishes real and fake latent sequences
 
 The generator and supervisor are trained to fool the discriminator, creating adversarial competition. 
 
@@ -25,10 +25,8 @@ The recovery module is the decoder part of the autoencoder. It reconstructs the 
 ### 3. Generator
 The generator module learns to produce fake latent representations that look like the real latent space H. Instead of directly generating data, it generates latent sequences which are decoded by the Recovery Module. It is trained adversarial to fool the discriminator module and also supervised by the Supervisor to preserve time dependencies
 ### 4. Supervisor
-The supervisor teaches the generator to produce sequences that follow realistic temporal dynamics. 
-$$
-L_s=|(|H_(t+1)-S(H_t )|)|^2
-$$
+The supervisor teaches the generator to produce sequences that follow realistic temporal dynamics.
+$$ L_s=|(|H_(t+1)-S(H_t )|)|^2 $$
 This acts as a temporal consistency constraint – the generator learns not just to produce realistic points but realistic transitions between timesteps
 ### 5. Discriminator
 The discriminator enforces realism in the latent space. It tries to distinguish between the real latent sequences (from the embedder) and fake latent sequences (from the generator and supervisor)
