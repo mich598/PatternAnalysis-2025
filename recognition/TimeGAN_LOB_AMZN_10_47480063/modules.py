@@ -43,19 +43,21 @@ def sequence_mask(lengths, max_len=None, device=None):
 # Modules
 # -------------------------
 class Embedder(nn.Module):
-    def __init__(self, module_name, input_dim, hidden_dim, num_layers):
+    def __init__(self, module_name, input_dim, hidden_dim, num_layers, dropout_rate=0.3):
         super().__init__()
         self.rnn = create_rnn(module_name, input_dim, hidden_dim, num_layers)
+        self.dropout = nn.Dropout(p=dropout_rate)
         self.fc = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
+            nn.Dropout(0.3),
             nn.Sigmoid()
         )
 
     def forward(self, x):
-        # x: (batch, seq_len, dim)
-        out, _ = self.rnn(x)  # out: (batch, seq_len, hidden_dim)
-        out = self.fc(out)
-        return out
+        with torch.backends.cudnn.flags(enabled=False):
+            output, hidden = self.rnn(x)
+        output = self.fc(output)
+        return output
 
 class Recovery(nn.Module):
     def __init__(self, module_name, hidden_dim, output_dim, num_layers):
@@ -72,19 +74,20 @@ class Recovery(nn.Module):
         return out
 
 class Generator(nn.Module):
-    def __init__(self, module_name, z_dim, hidden_dim, num_layers, dropout_rate=0.3):
+    def __init__(self, module_name, z_dim, hidden_dim, num_layers, dropout_rate=0.1):
         super().__init__()
         self.rnn = create_rnn(module_name, z_dim, hidden_dim, num_layers)
         self.dropout = nn.Dropout(p=dropout_rate)
         self.fc = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
+            nn.Dropout(p=0.1),
             nn.Sigmoid()
         )
 
-    def forward(self, z):
-        out, _ = self.rnn(z)
-        out = self.dropout(out)
-        out = self.fc(out)
+    def forward(self, z): 
+        out, _ = self.rnn(z) 
+        out = self.dropout(out) 
+        out = self.fc(out) 
         return out
 
 class Supervisor(nn.Module):
@@ -95,20 +98,22 @@ class Supervisor(nn.Module):
         self.dropout = nn.Dropout(p=dropout_rate)
         self.fc = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
+            nn.Dropout(0.3),
             nn.Sigmoid()
         )
 
-    def forward(self, z):
-        out, _ = self.rnn(z)
-        out = self.dropout(out)
-        out = self.fc(out)
+    def forward(self, z): 
+        out, _ = self.rnn(z) 
+        out = self.dropout(out) 
+        out = self.fc(out) 
         return out
 
 class Discriminator(nn.Module):
     def __init__(self, module_name, hidden_dim, num_layers):
         super().__init__()
         self.rnn = create_rnn(module_name, hidden_dim, hidden_dim, num_layers)
-        self.fc = nn.Linear(hidden_dim, 1)  # logits
+        # Apply spectral normalization to stabilize discriminator
+        self.fc = nn.utils.spectral_norm(nn.Linear(hidden_dim, 1))  # logits
 
     def forward(self, h):
         out, _ = self.rnn(h)
@@ -165,14 +170,14 @@ def timegan(ori_data, parameters, device=None):
     batch_size = parameters['batch_size']
     module_name = parameters['module']
     z_dim = 32
-    gamma = 0.85
+    gamma = 1
 
     lr = 5e-5
     beta1 = 0.4
     beta2 = 0.9
 
     # statistics loss weight (targets spread & midprice return matching)
-    lambda_stats = 200.0
+    lambda_stats = 300.0
     # instance-noise (stddev) added to discriminator inputs to reduce memorisation
     inst_noise_std = 0.03
     # label smoothing for real labels (helps stability)
@@ -190,11 +195,25 @@ def timegan(ori_data, parameters, device=None):
     # -------------------------
     # Optimizers
     # -------------------------
-    E0_optimizer = optim.Adam(list(embedder.parameters()) + list(recovery.parameters()), lr=lr, betas=(beta1, beta2))
-    E_optimizer = optim.Adam(list(embedder.parameters()) + list(recovery.parameters()), lr=lr, betas=(beta1, beta2))
-    D_optimizer = optim.Adam(discriminator.parameters(), lr=lr, betas=(beta1, beta2))
-    G_optimizer = optim.Adam(list(generator.parameters()) + list(supervisor.parameters()), lr=lr, betas=(beta1, beta2))
-    GS_optimizer = optim.Adam(list(generator.parameters()) + list(supervisor.parameters()), lr=lr, betas=(beta1, beta2))
+    E0_optimizer = optim.Adam(
+        list(embedder.parameters()) + list(recovery.parameters()),
+        lr=lr, betas=(beta1, beta2), weight_decay=1e-4
+    )
+    E_optimizer = optim.Adam(
+        list(embedder.parameters()) + list(recovery.parameters()),
+        lr=lr, betas=(beta1, beta2), weight_decay=1e-4
+    )
+    D_optimizer = optim.Adam(
+        discriminator.parameters(), lr=lr * 0.5, betas=(beta1, beta2), weight_decay=1e-4
+    )
+    G_optimizer = optim.Adam(
+        list(generator.parameters()) + list(supervisor.parameters()),
+        lr=lr, betas=(beta1, beta2), weight_decay=1e-4
+    )
+    GS_optimizer = optim.Adam(
+        list(generator.parameters()) + list(supervisor.parameters()),
+        lr=lr, betas=(beta1, beta2), weight_decay=1e-4
+    )
 
     # Loss functions
     bce_logits = nn.BCEWithLogitsLoss(reduction='none')  # we'll mask and average manually
@@ -299,7 +318,7 @@ def timegan(ori_data, parameters, device=None):
     print("Start Joint Training")
     for itt in range(iterations):
         # Generator training (twice)
-        for kk in range(2):
+        for kk in range(3):
             X_mb, T_mb = batch_generator(ori_data_norm_np, ori_time, batch_size)
             X_mb_t, T_mb_t, mask = to_torch(X_mb, T_mb)
             Z_mb = random_generator(batch_size, z_dim, T_mb, max_seq_len)
@@ -396,6 +415,7 @@ def timegan(ori_data, parameters, device=None):
 
             # ---------- backward & step ----------
             total_g_loss.backward()
+            torch.nn.utils.clip_grad_norm_(list(generator.parameters()) + list(supervisor.parameters()), max_norm=1.0)
             G_optimizer.step()
 
             # Train embedder (E_solver)
@@ -417,6 +437,7 @@ def timegan(ori_data, parameters, device=None):
             E_loss = E_loss0 + 0.1 * G_loss_S_val
 
             E_loss.backward()
+            torch.nn.utils.clip_grad_norm_(list(embedder.parameters()) + list(recovery.parameters()), max_norm=1.0)
             E_optimizer.step()
 
         # Discriminator training
@@ -461,13 +482,45 @@ def timegan(ori_data, parameters, device=None):
 
         d_loss = d_loss_real + d_loss_fake + gamma * d_loss_fake_e
 
+        def compute_grad_penalty(D, real, fake, mask, device):
+            """Compute gradient penalty (WGAN-GP style) for discriminator."""
+            alpha = torch.rand(real.size(0), 1, 1, device=device)
+            alpha = alpha.expand_as(real)
+
+            interpolates = alpha * real + ((1 - alpha) * fake)
+            interpolates.requires_grad_(True)
+
+            d_interpolates = D(interpolates)
+            fake_output = torch.ones_like(d_interpolates, device=device)
+
+            gradients = torch.autograd.grad(
+                outputs=d_interpolates,
+                inputs=interpolates,
+                grad_outputs=fake_output,
+                create_graph=True,
+                retain_graph=True,
+                only_inputs=True,
+            )[0]
+
+            gradients = gradients.reshape(gradients.size(0), -1)
+            grad_norm = gradients.norm(2, dim=1)
+            penalty = ((grad_norm - 1) ** 2).mean()
+
+            return penalty
+
         # conditional update (if discriminator not too good)
-        if d_loss.item() > 0.15:
-            d_loss.backward()
+        grad_penalty = compute_grad_penalty(discriminator, H_noisy.detach(), H_hat_noisy.detach(), mask, device)
+        lambda_gp = 10.0
+        d_loss_total = d_loss + lambda_gp * grad_penalty
+
+        if d_loss_total.item() > 0.15:
+            d_loss_total.backward()
+            # Apply gradient clipping to avoid exploding grads
+            torch.nn.utils.clip_grad_norm_(discriminator.parameters(), max_norm=1.0)
             D_optimizer.step()
-            step_d_loss = d_loss.item()
+            step_d_loss = d_loss_total.item()
         else:
-            step_d_loss = d_loss.item()
+            step_d_loss = d_loss_total.item()
 
         # print logs
         if itt % 1000 == 0:
