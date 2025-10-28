@@ -10,13 +10,6 @@ Neural Information Processing Systems (NeurIPS), 2019.
 Github Link: https://github.com/jsyoon0823/TimeGAN/blob/master/data_loading.py
 
 Based on main_timegan.py
-
-(1) Import data
-(2) Generate synthetic data
-(3) Evaluate the performances in three ways
-  - Visualization (t-SNE, PCA)
-  - Discriminative score
-  - Predictive score
 """
 
 ## Necessary packages
@@ -61,12 +54,12 @@ def main ():
     print('orderbook dataset is ready.')
 
     ## Synthetic data generation by TimeGAN
-    # Set newtork parameters
+    # Set network parameters
     parameters = dict()
     parameters['module'] = 'gru'
-    parameters['hidden_dim'] = 24
+    parameters['hidden_dim'] = 64
     parameters['num_layer'] = 3
-    parameters['iterations'] = 100
+    parameters['iterations'] = 10000
     parameters['batch_size'] = 128
 
     generated_data = timegan(ori_data, parameters)

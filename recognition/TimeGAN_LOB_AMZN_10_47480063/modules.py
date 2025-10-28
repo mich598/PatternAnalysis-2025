@@ -11,7 +11,6 @@ Github Link: https://github.com/jsyoon0823/TimeGAN/blob/master/data_loading.py
 Based on timegan.py code
 """
 
-# timegan_pytorch.py
 import numpy as np
 import torch
 import torch.nn as nn
@@ -73,9 +72,10 @@ class Recovery(nn.Module):
         return out
 
 class Generator(nn.Module):
-    def __init__(self, module_name, z_dim, hidden_dim, num_layers):
+    def __init__(self, module_name, z_dim, hidden_dim, num_layers, dropout_rate=0.3):
         super().__init__()
         self.rnn = create_rnn(module_name, z_dim, hidden_dim, num_layers)
+        self.dropout = nn.Dropout(p=dropout_rate)
         self.fc = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
             nn.Sigmoid()
@@ -83,21 +83,24 @@ class Generator(nn.Module):
 
     def forward(self, z):
         out, _ = self.rnn(z)
+        out = self.dropout(out)
         out = self.fc(out)
         return out
 
 class Supervisor(nn.Module):
-    def __init__(self, module_name, hidden_dim, num_layers_minus1):
+    def __init__(self, module_name, hidden_dim, num_layers_minus1, dropout_rate=0.3):
         super().__init__()
         # note: original used num_layers-1 in TF; match that here
         self.rnn = create_rnn(module_name, hidden_dim, hidden_dim, num_layers_minus1 if num_layers_minus1>0 else 1)
+        self.dropout = nn.Dropout(p=dropout_rate)
         self.fc = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
             nn.Sigmoid()
         )
 
-    def forward(self, h):
-        out, _ = self.rnn(h)
+    def forward(self, z):
+        out, _ = self.rnn(z)
+        out = self.dropout(out)
         out = self.fc(out)
         return out
 
@@ -161,8 +164,19 @@ def timegan(ori_data, parameters, device=None):
     iterations = parameters['iterations']
     batch_size = parameters['batch_size']
     module_name = parameters['module']
-    z_dim = dim
-    gamma = 1.0
+    z_dim = 32
+    gamma = 0.6
+
+    lr = 1e-4
+    beta1 = 0.5
+    beta2 = 0.9
+
+    # statistics loss weight (targets spread & midprice return matching)
+    lambda_stats = 200.0
+    # instance-noise (stddev) added to discriminator inputs to reduce memorisation
+    inst_noise_std = 0.03
+    # label smoothing for real labels (helps stability)
+    real_label_smooth = 0.9
 
     # -------------------------
     # Instantiate networks
@@ -176,11 +190,12 @@ def timegan(ori_data, parameters, device=None):
     # -------------------------
     # Optimizers
     # -------------------------
-    E0_optimizer = optim.Adam(list(embedder.parameters()) + list(recovery.parameters()))
-    E_optimizer = optim.Adam(list(embedder.parameters()) + list(recovery.parameters()))
-    D_optimizer = optim.Adam(discriminator.parameters())
-    G_optimizer = optim.Adam(list(generator.parameters()) + list(supervisor.parameters()))
-    GS_optimizer = optim.Adam(list(generator.parameters()) + list(supervisor.parameters()))
+    E0_optimizer = optim.Adam(list(embedder.parameters()) + list(recovery.parameters()), lr=lr, betas=(beta1, beta2))
+    E_optimizer = optim.Adam(list(embedder.parameters()) + list(recovery.parameters()), lr=lr, betas=(beta1, beta2))
+    D_optimizer = optim.Adam(discriminator.parameters(), lr=lr, betas=(beta1, beta2))
+    G_optimizer = optim.Adam(list(generator.parameters()) + list(supervisor.parameters()), lr=lr, betas=(beta1, beta2))
+    GS_optimizer = optim.Adam(list(generator.parameters()) + list(supervisor.parameters()), lr=lr, betas=(beta1, beta2))
+
 
     # Loss functions
     bce_logits = nn.BCEWithLogitsLoss(reduction='none')  # we'll mask and average manually
@@ -199,6 +214,29 @@ def timegan(ori_data, parameters, device=None):
         mask = sequence_mask(t_t, max_len=x_t.size(1), device=device).unsqueeze(-1).float()  # (batch, seq_len, 1)
         return x_t, t_t, mask
 
+    # --- helper to compute spreads and midprice returns from a batch tensor ---
+    # expects x_t: (batch, seq_len, dim), mask: (batch, seq_len, 1)
+    def compute_spread_midret_from_tensor(x_t, mask):
+        # Assumes feature 0 = best bid, feature 1 = best ask
+        # x_t is torch.Tensor on device
+        bid = x_t[..., 0]  # (batch, seq_len)
+        ask = x_t[..., 1]  # (batch, seq_len)
+        mid = (bid + ask) / 2.0
+        spread = (ask - bid) * mask.squeeze(-1)  # masked spreads
+        # midprice returns: r_t = (mid_t - mid_{t-1}) / mid_{t-1}
+        mid_shift = mid[:, :-1]
+        mid_next = mid[:, 1:]
+        # avoid division by zero
+        denom = (mid_shift.abs() + 1e-8)
+        midret = (mid_next - mid_shift) / denom
+        # also apply mask for valid positions (exclude timesteps where mask==0)
+        mask_mid = (mask[:, 1:, 0])  # (batch, seq_len-1)
+        spread_valid = spread[:, :-1] * mask_mid
+        midret_valid = midret * mask_mid
+        # flatten across batch/time but keep torch tensors (used for moment computation)
+        return spread_valid, midret_valid
+
+
     # -------------------------
     # Training steps
     # -------------------------
@@ -216,7 +254,7 @@ def timegan(ori_data, parameters, device=None):
         loss_T0 = loss_T0_all.sum() / mask.sum().clamp_min(1.0)
         loss_T0.backward()
         E0_optimizer.step()
-
+        
         if itt % 1000 == 0:
             print(f"step: {itt}/{iterations}, e_loss: {np.round(np.sqrt(loss_T0.item()),4)}")
 
@@ -313,8 +351,51 @@ def timegan(ori_data, parameters, device=None):
             g_loss_v2 = torch.mean(torch.abs(mean_x_hat - mean_x))
             g_loss_v = g_loss_v1 + g_loss_v2
 
-            total_g_loss = g_loss_u + gamma * g_loss_u_e + 100.0 * torch.sqrt(g_loss_s + 1e-8) + 100.0 * g_loss_v
+            # ---------- statistics loss: match spread & midprice return mean/std ----------
+            # compute spreads & midreturns for real X_mb_t and generated X_hat
+            with torch.no_grad():
+                # compute real spreads/midret on this minibatch (use mask)
+                real_spread, real_midret = compute_spread_midret_from_tensor(X_mb_t, mask)
 
+            # generated is X_hat: shape (batch, seq_len, dim)
+            gen_spread, gen_midret = compute_spread_midret_from_tensor(X_hat, mask)
+
+            # compute batch-wise mean and std for each (ignore zeros from masking)
+            # for stability, compute means dividing by nonzero counts
+            def masked_mean_std(x):
+                # x: (batch, time) with zeros in invalid positions
+                valid = (x != 0).float()
+                counts = valid.sum()
+                if counts.item() < 1.0:
+                    return torch.tensor(0.0, device=x.device), torch.tensor(0.0, device=x.device)
+                m = x.sum() / counts
+                centered = (x - m) * valid
+                var = (centered.pow(2).sum() / counts).clamp_min(1e-8)
+                return m, torch.sqrt(var)
+
+            real_sp_m, real_sp_s = masked_mean_std(real_spread)
+            gen_sp_m, gen_sp_s = masked_mean_std(gen_spread)
+            real_mr_m, real_mr_s = masked_mean_std(real_midret)
+            gen_mr_m, gen_mr_s = masked_mean_std(gen_midret)
+
+            # absolute differences for mean/std
+            sp_diff_mean = torch.abs(real_sp_m - gen_sp_m)
+            sp_diff_std = torch.abs(real_sp_s - gen_sp_s)
+            mr_diff_mean = torch.abs(real_mr_m - gen_mr_m)
+            mr_diff_std = torch.abs(real_mr_s - gen_mr_s)
+
+            g_loss_stats = sp_diff_mean + sp_diff_std + mr_diff_mean + mr_diff_std
+
+            # ---------- total generator loss (add stats loss weighted by lambda_stats) ----------
+            total_g_loss = (
+                g_loss_u
+                + gamma * g_loss_u_e
+                + 100.0 * torch.sqrt(g_loss_s + 1e-8)
+                + 100.0 * g_loss_v
+                + lambda_stats * g_loss_stats
+            )
+
+            # ---------- backward & step ----------
             total_g_loss.backward()
             G_optimizer.step()
 
@@ -353,11 +434,22 @@ def timegan(ori_data, parameters, device=None):
             E_hat = generator(Z_mb_t)
             H_hat = supervisor(E_hat)
 
-        D_real = discriminator(H)
-        D_fake = discriminator(H_hat)
-        D_fake_e = discriminator(E_hat)
+        # add small instance noise to discriminator inputs (reduces memorisation)
+        if inst_noise_std > 0:
+            noise_real = torch.randn_like(H) * inst_noise_std
+            noise_fake = torch.randn_like(H_hat) * inst_noise_std
+            noise_fake_e = torch.randn_like(E_hat) * inst_noise_std
+            H_noisy = H + noise_real
+            H_hat_noisy = H_hat + noise_fake
+            E_hat_noisy = E_hat + noise_fake_e
+        else:
+            H_noisy, H_hat_noisy, E_hat_noisy = H, H_hat, E_hat
 
-        labels_real = torch.ones_like(D_real, device=device)
+        D_real = discriminator(H_noisy)
+        D_fake = discriminator(H_hat_noisy)
+        D_fake_e = discriminator(E_hat_noisy)
+
+        labels_real = torch.ones_like(D_real, device=device) * real_label_smooth
         labels_fake = torch.zeros_like(D_fake, device=device)
 
         d_loss_real_all = bce_logits(D_real, labels_real)
