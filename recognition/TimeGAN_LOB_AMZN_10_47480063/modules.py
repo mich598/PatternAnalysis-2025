@@ -165,10 +165,10 @@ def timegan(ori_data, parameters, device=None):
     batch_size = parameters['batch_size']
     module_name = parameters['module']
     z_dim = 32
-    gamma = 0.6
+    gamma = 0.85
 
-    lr = 1e-4
-    beta1 = 0.5
+    lr = 5e-5
+    beta1 = 0.4
     beta2 = 0.9
 
     # statistics loss weight (targets spread & midprice return matching)

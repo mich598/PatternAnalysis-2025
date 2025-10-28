@@ -17,8 +17,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import argparse
-import numpy as np
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -57,10 +55,10 @@ def main ():
     # Set network parameters
     parameters = dict()
     parameters['module'] = 'gru'
-    parameters['hidden_dim'] = 64
-    parameters['num_layer'] = 3
-    parameters['iterations'] = 10000
-    parameters['batch_size'] = 128
+    parameters['hidden_dim'] = 48
+    parameters['num_layer'] = 2
+    parameters['iterations'] = 7000
+    parameters['batch_size'] = 256
 
     generated_data = timegan(ori_data, parameters)
     print('Finish Synthetic Data Generation')
