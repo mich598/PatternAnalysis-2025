@@ -196,7 +196,6 @@ def timegan(ori_data, parameters, device=None):
     G_optimizer = optim.Adam(list(generator.parameters()) + list(supervisor.parameters()), lr=lr, betas=(beta1, beta2))
     GS_optimizer = optim.Adam(list(generator.parameters()) + list(supervisor.parameters()), lr=lr, betas=(beta1, beta2))
 
-
     # Loss functions
     bce_logits = nn.BCEWithLogitsLoss(reduction='none')  # we'll mask and average manually
     mse_loss = nn.MSELoss(reduction='none')
