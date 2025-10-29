@@ -180,7 +180,7 @@ def timegan(ori_data, parameters, device=None):
         list(embedder.parameters()) + list(recovery.parameters()), lr=lr, betas=(beta1, beta2)
     )
     D_optimizer = optim.Adam(discriminator.parameters(), lr=lr * 0.1, betas=(0.4, 0.9))
-    G_optimizer = optim.Adam(list(generator.parameters()) + list(supervisor.parameters()), lr=lr * 2.0, betas=(0.4, 0.9))
+    G_optimizer = optim.Adam(list(generator.parameters()) + list(supervisor.parameters()), lr=lr * 3.0, betas=(0.4, 0.9))
 
     bce_logits = nn.BCEWithLogitsLoss(reduction="none")
     mse_loss = nn.MSELoss(reduction="none")
@@ -321,7 +321,15 @@ def timegan(ori_data, parameters, device=None):
             g_loss_v = mean_diff + std_diff
 
             # total generator loss (match original weighting)
-            total_g_loss = 1.0 * (g_loss_u + gamma * g_loss_u_e) + 100.0 * torch.sqrt(g_loss_s + 1e-8) + 100.0 * g_loss_v
+            total_g_loss = (
+                1.0 * (g_loss_u + gamma * g_loss_u_e)
+                + 100.0 * torch.sqrt(g_loss_s + 1e-8)
+                + 50.0 * g_loss_v
+            )
+
+            # Added soft target regularisation for generator
+            g_reg = 0.01 * torch.mean(E_hat**2)
+            total_g_loss = total_g_loss + g_reg
 
             total_g_loss.backward()
             torch.nn.utils.clip_grad_norm_(list(generator.parameters()) + list(supervisor.parameters()), 1.0)
@@ -409,7 +417,7 @@ def timegan(ori_data, parameters, device=None):
 
         step_d_loss = d_loss.detach().item()
 
-        if step_d_loss > 0.05:
+        if step_d_loss > 0.1 and itt % 3 == 0:
             D_optimizer.zero_grad()
             d_loss.backward()
             torch.nn.utils.clip_grad_norm_(discriminator.parameters(), 1.0)
