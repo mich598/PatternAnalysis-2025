@@ -66,9 +66,13 @@ $$ x'=(x-x_m)/(x_max-x_min ) $$
 Firstly the vector of minimum values per feature is calculated. The data is then shifted such that the smallest value becomes 0. The vector of maximum values per feature is calculated and each feature is divided by the corresponding maximum to scale to obtain normalised data in the range [0, 1].
 ### During Training
 A key element used for the optimizers is the Adam Optimiser, which was utilised for Embedder, Generator and Supervisor modules. Adam (Adaptive Moment Estimation) optimizer combines the advantages of Momentum and RMSprop techniques to adjust learning rates during training (GeeksforGeeks, 2025). Momentum accelerates the gradient descent process by incorporating a weighted moving average which allows the algorithm to converge faster. Meanwhile, RMSprop uses an exponentially weighted moving average of squared gradients, which overcomes the problem of diminishing learning rates. 
+
 $$
 w_{t+1} = w_t - \alpha \frac{m_t}{\sqrt{v_t} + \epsilon}
 $$
+
+$w_{t+1} = w_t - \alpha \frac{m_t}{\sqrt{v_t} + \epsilon}$
+
 The learning rate α used for TimeGAN was 0.00005 while the decay rates β_1 and  β_2 are 0.4 and 0.9 respectively.
 
 Loss functions were based on binary cross entropy (BCE) loss and means square error (MSE) loss functions since BCE loss strongly penalises confident misclassification while MSE loss penalises squared difference between predicted and true stock price values. BCE loss is used in discriminator and generator adversarial training by making synthetic sequences statistically indistinguishable from real trades. MSE is used in reconstruction and supervised steps to measure how well the generator and embedder reconstructs real sequences.
