@@ -97,14 +97,14 @@ TimeGAN utilises three stages of training:
 ***Embedding Network Training***\
 The embedded training is the first phase of training where the model learns a meaningful latent representation of the LOB sequences. Before adversarial training begins, the model must learn to encode and reconstruct like an autoencoder data via the embedder and recovery module respectively. Firstly, real sequences are fed through the autoencoder to learn meaningful encoding and reconstruction. The MSE is computed to minimise differences between original and reconstructed data. Backpropagation and weights are updated to optimise embedder and recovery jointly and the process repeats until the reconstruction error is small. In summary, this phase allows the model to understand the structure of real market dynamics before it generates synthetic ones. 
 
-This phase takes approximately 5 minutes to complete 5000 epochs with a training loss of 0.2103. 
+This phase takes approximately 5 minutes to complete 5000 epochs with a training loss of 0.1677. 
 
 ***Supervised Loss Training***\
 The supervised training is the second phase where the model learns the temporal dynamics of the latent representations. Where the embedder maps real data to the latent space $H$, the supervisor learns to predict the next hidden state $H_{t+1}$ from the current latent space $H_t$. Afterwards the generator relies on the supervisor to produce temporally consistent synthetic latent trajectories. Firstly, an optimiser is constructed that only trains the supervisor and a masked MSE loss function is defined to ensure variable-length sequences do not contribute extra zeros to the loss. The training loop is setup with batch preparation before predicting the next latent step and computing the supervised loss. Backpropagation occurs and the supervisor’s parameters are updated. 
 
 Additionally, an extra fine tuning loop was added to realign the supervisor with the latest embedder outputs to ensure that they are synchronised before joint training starts. This reruns the supervisor phase for 1000 iterations using the finalised embedder to reduce instability, improve temporal coherence and smooths loss transitions. This also stabilises joint training so that **g_loss_s** and **g_loss_u** can start from a good baseline
 
-This phase (including fine tuning) takes approximately 4 minutes to compute 4000 epochs (+ additional 1000 fine tuning epoch) with a training loss of 0.0209. 
+This phase (including fine tuning) takes approximately 4 minutes to compute 4000 epochs (+ additional 1000 fine tuning epoch) with a training loss of 0.0256. 
 
 ***Joint Training***\
 Joint training is the final phase of TimeGAN. The purpose of joint training is to enable the generator and supervisor to produce synthetic latent sequences that fool the discriminator (through adversarial learning), maintain temporal consistency (through supervised learning), maintain feature statistics of real data and keep embedding consistent with reconstruction.
@@ -121,35 +121,34 @@ In the embedder and recovery stage, the reconstruction loss is computed to force
 Discriminator training allows the discriminator to better separate real and fake latent sequences. Gaussian noise is added to regularise the discriminator, the BCE losses are computed and gradient penalty is added for stability. GAN stabilisers perform label smoothing and flipping to prevent overconfidence in the discriminator. The discriminator is only trained when it is weak to avoid overfitting.
 
 This phase takes approximately 50 minutes to compute 5000 epochs with:
-* **d_loss** (discriminator accuracy) = 2.4884
-* **g_loss_u** (adversarial success) = 0.5648
-* **g_loss_s** (temporal consistency) = 0.3041 
-* **g_loss_v** (moment matching) = 0.0468
-* **e_loss_t0** (reconstruction quality) = 0.1735
+* **d_loss** (discriminator accuracy) = 2.1443
+* **g_loss_u** (adversarial success) = 0.9657
+* **g_loss_s** (temporal consistency) = 0.2436 
+* **g_loss_v** (moment matching) = 0.0394
+* **e_loss_t0** (reconstruction quality) = 0.1649
 
 The generator learns to synthesize realistic market state trajectories, the supervisor enforces temporal realism so that prices and volumes evolve smoothly, the discriminator ensures fake order-book sequences follow the same patterns as the real data and the moment-matching term keeps means, spreads, and volatilities aligned with historical statistics. 
 
 After the three phases of training, synthetic data is generated using all samples. The results are synthetic LOB sequences that look, behave, and distribute statistically like real market data.
 ## Results and Discussion
 The project was conducted using A100 High RAM GPU. \
-System RAM used was 18.2/167.1 GB, VRAM used was 8.5GB/80GB and Disk space used is 39.7/235.7 GB. \
-Total runtime from preprocessing to training to synthesising took 57 minutes. \
+Total system RAM used was 14.4/167.1 GB, VRAM used was 8.5GB/80GB and Disk space used is 39.7/235.7 GB. \
+The total runtime from preprocessing to training to synthesising took 57 minutes.
 
 _Figure 1: KL Divergence, generated and real spread on the left and midprice return on the right_
-![alt text](image-5.png)
+![alt text](image-1.png)
 _Figure 2: SSIM between heatmaps of generated vs real LOB depth snapshots_
-![alt text](image-6.png)
+![alt text](image-2.png)
 _Figure 3: 5 representative heatmap visualisation of generated vs real LOBs_
-![alt text](image-7.png)
-![alt text](image-8.png)
+![alt text](image-3.png)
+![alt text](image-4.png)
 
-Figure 1 shows that the KL divergence for spread is 1.0614 while KL divergence for midprice return is 8.6134. In the real world, midprice return are typically non-Gaussian, heavy-tailed, skewed and contains high volatility while bid-ask pricing spread are usually bounded, low variance, and near discrete tick multiples. This makes it easier for TimeGAN to learn and reproduce spread as opposed to midprice returns which is seen in the higher KL divergence in midprice returns.
+Figure 1 shows that the KL divergence for spread is 0.8673 while KL divergence for midprice return is 8.7250. In the real world, midprice return are typically non-Gaussian, heavy-tailed, skewed and contains high volatility while bid-ask pricing spread are usually bounded, low variance, and near discrete tick multiples. This makes it easier for TimeGAN to learn and reproduce spread as opposed to midprice returns which is seen in the higher KL divergence in midprice returns.
 
-Figure 2 indicates that the mean SSIM is 0.9932. Given that an SSIM of 1 indicates a perfect match, the generated image is a very accurate representation of the original real data. Meanwhile, Figure 3 shows 5 representative heatmap visualisation of generated vs real LOBs randomly selected. The generated LOB with the highest SSIM is sample 219517 with an SSIM of 0.952 while the lowest scoring SSIM is sample 33649 with an SSIM of 0.518. The other three samples excluding the highest and lowest SSIM range from 0.857 to 0.924. Out of the five samples taken, the SSIM average was approximately 0.831. This achieved the visual similarity goal of SSIM being greater than 0.6 which suggests that the generated LOBs are visually similar to the real LOBs.  
+Figure 2 indicates that the mean SSIM is 0.9932. Given that an SSIM of 1 indicates a perfect match, the generated image is a very accurate representation of the original mean data. Meanwhile, Figure 3 shows 5 representative heatmap visualisation of generated vs real LOBs randomly selected. The generated LOB with the highest SSIM is sample 219517 with an SSIM of 0.952 while the lowest scoring SSIM is sample 33649 with an SSIM of 0.518. The other three samples excluding the highest and lowest SSIM range from 0.857 to 0.924. Out of the five samples taken, the SSIM average was approximately 0.831. This achieved the visual similarity goal of SSIM being greater than 0.6 which suggests that the generated LOBs are visually similar to the real LOBs.  
 
 ## Conclusion
-The TimeGAN was relatively accurate in its heatmaps of generated vs real LOBs based on the SSIM metric. However, the KL divergence was unable to reach 0.1, with the closest being 1.1093 from ask-bid spread. 
-Potential improvements to decrease the KL divergence to 0.1 includes replacing RNNs with transformer encoder to improve realism and coherence, using adaptive learning rates, adding feature matching loss and introducing temporal consistency penalty. 
+The TimeGAN was relatively accurate in its heatmaps of generated vs real LOBs based on the SSIM metric. However, the KL divergence was unable to reach 0.1, with the closest being 1.1093 from ask-bid spread. Potential improvements could work on decreasing the KL divergence to 0.1 and improving representative heatmaps such that the lowest SSIM is 0.6. This can be achieved by testing various methods such as replacing RNNs with transformer encoder to improve realism and coherence, using adaptive learning rates, adding feature matching loss and introducing temporal consistency penalty. 
 
 ## References
 datacamp. (2024, January 4). What is Normalization in Machine Learning? A Comprehensive Guide to Data Rescaling. Retrieved from datacamp: https://www.datacamp.com/tutorial/normalization-in-machine-learning
