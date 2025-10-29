@@ -46,7 +46,7 @@ def sequence_mask(lengths, max_len=None, device=None):
 
 
 # -------------------------
-# Model blocks
+# Module blocks
 # -------------------------
 class Embedder(nn.Module):
     def __init__(self, module_name, input_dim, hidden_dim, num_layers, dropout_rate=0.3):
@@ -156,7 +156,7 @@ def timegan(ori_data, parameters, device=None):
     z_dim = 32
     gamma = 1
 
-    # hyperparams
+    # hyperparameters
     lr = 5e-5
     lr_supervised = parameters.get("lr_supervised", 2e-4)
     iterations_supervise = parameters.get("iterations_supervise", iterations * 2)
@@ -165,7 +165,7 @@ def timegan(ori_data, parameters, device=None):
     inst_noise_std = 0.03
     real_label_smooth = 0.85
 
-    # networks
+    # module networks
     embedder = Embedder(module_name, dim, hidden_dim, num_layers).to(device)
     recovery = Recovery(module_name, hidden_dim, dim, num_layers).to(device)
     generator = Generator(module_name, z_dim, hidden_dim, num_layers).to(device)
@@ -173,16 +173,17 @@ def timegan(ori_data, parameters, device=None):
     discriminator = Discriminator(module_name, hidden_dim, num_layers).to(device)
 
     # optimizers
-    E0_optimizer = optim.Adam(
-        list(embedder.parameters()) + list(recovery.parameters()), lr=lr, betas=(beta1, beta2)
-    )
-    E_optimizer = optim.Adam(
-        list(embedder.parameters()) + list(recovery.parameters()), lr=lr, betas=(beta1, beta2)
-    )
-    D_optimizer = optim.Adam(discriminator.parameters(), lr=lr * 0.1, betas=(0.4, 0.9))
-    G_optimizer = optim.Adam(list(generator.parameters()) + list(supervisor.parameters()), lr=lr * 3.0, betas=(0.4, 0.9))
+    E0_optimizer = optim.Adam(list(embedder.parameters()) + list(recovery.parameters()), 
+                              lr=lr, betas=(beta1, beta2))
+    E_optimizer = optim.Adam(list(embedder.parameters()) + list(recovery.parameters()), 
+                             lr=lr, betas=(beta1, beta2))
+    D_optimizer = optim.Adam(discriminator.parameters(), lr=lr * 0.12, betas=(0.4, 0.9))
+    G_optimizer = optim.Adam(list(generator.parameters()) + list(supervisor.parameters()), 
+                             lr=lr * 3.0, betas=(0.4, 0.9))
+    # Use a dedicated optimizer for Supervisor only (not G) to focus learning.
+    S_optimizer = optim.Adam(list(supervisor.parameters()), 
+                             lr=parameters.get("lr_supervised", 2e-3), betas=(0.4, 0.9))
 
-    bce_logits = nn.BCEWithLogitsLoss(reduction="none")
     mse_loss = nn.MSELoss(reduction="none")
 
     def to_torch(x_np, t_np):
@@ -204,14 +205,14 @@ def timegan(ori_data, parameters, device=None):
         loss.backward()
         torch.nn.utils.clip_grad_norm_(list(embedder.parameters()) + list(recovery.parameters()), 1.0)
         E0_optimizer.step()
+
+        # Display embedded loss outputs
         if itt % 500 == 0:
             print(f"step:{itt}/{iterations}, e_loss:{np.sqrt(loss.item()):.4f}")
+    
     print("Finish Embedding Network Training")
 
     print("Start Supervised Loss Training")
-    # Use a dedicated optimizer for Supervisor only (not G) to focus learning.
-    S_optimizer = optim.Adam(list(supervisor.parameters()), lr=parameters.get("lr_supervised", 2e-3), betas=(0.4, 0.9))
-
     def masked_mse(a, b, m):
         # a,b: (B,T,H), m: (B,T,1) float {0,1}
         return ((a - b) ** 2 * m).sum() / m.sum().clamp_min(1.0)
@@ -220,8 +221,7 @@ def timegan(ori_data, parameters, device=None):
         # x: (B,T,1 or H); m: (B,T,1) in {0,1} float
         return (x * m).sum() / m.sum().clamp_min(1.0)
 
-
-    iterations_supervise = parameters.get("iterations_supervise", iterations * 4)  # give it more steps
+    iterations_supervise = parameters.get("iterations_supervise", iterations * 4)
 
     for itt in range(iterations_supervise):
         X_mb, T_mb = batch_generator(ori_data_norm, ori_time, batch_size)
@@ -245,8 +245,9 @@ def timegan(ori_data, parameters, device=None):
         torch.nn.utils.clip_grad_norm_(supervisor.parameters(), 1.0)
         S_optimizer.step()
 
+        # Display supervised loss outputs
         if itt % 500 == 0:
-            print(f"supervised step:{itt}/{iterations_supervise}, s_loss:{loss_s.item()**0.5:.4f}")  # sqrt to match your display
+            print(f"supervised step:{itt}/{iterations_supervise}, s_loss:{loss_s.item()**0.5:.4f}")  
 
     print("Finish Supervised Training")
 
@@ -268,7 +269,7 @@ def timegan(ori_data, parameters, device=None):
     print("Finished fine-tuning supervisor.")
 
     # -------------------------
-    # 3. Joint Training (simplified, TF-style)
+    # 3. Joint Training
     # -------------------------
     print("Start Joint Training")
 
@@ -277,7 +278,6 @@ def timegan(ori_data, parameters, device=None):
     decay = 0.9  # 0.9–0.95 works best
 
     for itt in range(iterations):
-
         # -------------------------
         # Generator/Embedder training (twice per outer iter)
         # -------------------------
@@ -286,7 +286,9 @@ def timegan(ori_data, parameters, device=None):
             X_mb, T_mb = batch_generator(ori_data_norm, ori_time, batch_size)
             X_mb_t, T_mb_t, mask = to_torch(X_mb, T_mb)
             Z_mb = random_generator(batch_size, z_dim, T_mb, max_seq_len)
+            # Add small Gaussian Noise to generator input
             Z_mb_t = torch.tensor(Z_mb, dtype=torch.float32, device=device)
+            Z_mb_t = Z_mb_t + 0.07 * torch.randn_like(Z_mb_t)
 
             # --- G (generator + supervisor) step ---
             generator.train(); supervisor.train(); embedder.train(); recovery.train()
@@ -323,8 +325,8 @@ def timegan(ori_data, parameters, device=None):
             # total generator loss (match original weighting)
             total_g_loss = (
                 1.0 * (g_loss_u + gamma * g_loss_u_e)
-                + 100.0 * torch.sqrt(g_loss_s + 1e-8)
-                + 50.0 * g_loss_v
+                + 75.0 * torch.sqrt(g_loss_s + 1e-8)
+                + 30.0 * g_loss_v
             )
 
             # Added soft target regularisation for generator
@@ -370,7 +372,7 @@ def timegan(ori_data, parameters, device=None):
             step_e_loss_t0 = E_loss_T0.detach().item()
 
         # -------------------------
-        # Discriminator training (only if needed)
+        # Discriminator training
         # -------------------------
         X_mb, T_mb = batch_generator(ori_data_norm, ori_time, batch_size)
         X_mb_t, T_mb_t, mask = to_torch(X_mb, T_mb)  # <-- needed for masked hinge
@@ -403,30 +405,28 @@ def timegan(ori_data, parameters, device=None):
                                     create_graph=True, retain_graph=True, only_inputs=True)[0]
             return ((grad.norm(2, dim=[1,2]) - 1) ** 2).mean()
 
-        # Hinge discriminator losses (masked)
-        d_loss_real   = masked_mean(torch.relu(1.0 - D_real),   mask)
-        d_loss_fake   = masked_mean(torch.relu(1.0 + D_fake),   mask)
-        d_loss_fake_e = masked_mean(torch.relu(1.0 + D_fake_e), mask)
+        # Hinge discriminator losses (masked, with soft margin)
+        margin = 1  # acts like label smoothing
+        d_loss_real   = masked_mean(torch.relu(margin - D_real),   mask)
+        d_loss_fake   = masked_mean(torch.relu(margin + D_fake),   mask)
+        d_loss_fake_e = masked_mean(torch.relu(margin + D_fake_e), mask)
 
         d_loss = d_loss_real + d_loss_fake + gamma * d_loss_fake_e
 
         # modest gradient penalty
         if itt % 4 == 0:
-            gp_loss = 0.3 * gradient_penalty(discriminator, H_real, H_hat)
+            gp_loss = 0.05 * gradient_penalty(discriminator, H_real, H_hat)
             d_loss = d_loss + gp_loss
 
         step_d_loss = d_loss.detach().item()
 
-        if step_d_loss > 0.1 and itt % 3 == 0:
-            D_optimizer.zero_grad()
-            d_loss.backward()
-            torch.nn.utils.clip_grad_norm_(discriminator.parameters(), 1.0)
-            D_optimizer.step()
+        D_optimizer.zero_grad()
+        d_loss.backward()
+        torch.nn.utils.clip_grad_norm_(discriminator.parameters(), 1.0)
+        D_optimizer.step()
 
-        # -------------------------
-        # Logging every 1000 iters
-        # -------------------------
-        if itt % 1000 == 0:
+        # Display joint loss outputs
+        if itt % 500 == 0:
             print(
                 f"step: {itt}/{iterations}, "
                 f"d_loss: {np.round(step_d_loss,4)}, "
@@ -438,7 +438,7 @@ def timegan(ori_data, parameters, device=None):
 
     print("Finish Joint Training")
 
-    # synthesize
+    # Synthesize samples
     Z_mb = random_generator(no, z_dim, ori_time, max_seq_len)
     Z_mb_t = torch.tensor(Z_mb, dtype=torch.float32, device=device)
     with torch.no_grad():

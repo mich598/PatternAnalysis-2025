@@ -86,8 +86,8 @@ $$
 
 The learning rate α used for TimeGAN was 0.00005 while the decay rates $β_1$ and $β_2$ are 0.4 and 0.9 respectively.
 
-***BCE and MSE Loss Functions***\
-Loss functions were based on binary cross entropy (BCE) loss and means square error (MSE) loss functions since BCE loss strongly penalises confident misclassification while MSE loss penalises squared difference between predicted and true stock price values. BCE loss is used in discriminator and generator adversarial training by making synthetic sequences statistically indistinguishable from real trades. MSE is used in reconstruction and supervised steps to measure how well the generator and embedder reconstructs real sequences.
+***MSE Loss Functions***\
+The basis for loss functions used such as masked MSE were based means square error (MSE) loss functions. It measures the average squared differences between predicted and actual values (Learning, 2025). In this case, MSE loss penalises squared difference between predicted and true stock price values. BCE loss is used in discriminator and generator adversarial training by making synthetic sequences statistically indistinguishable from real trades. MSE is used in reconstruction and supervised steps to measure how well the generator and embedder reconstructs real sequences.
 
 TimeGAN utilises three stages of training:
 * Embedded Network Training
@@ -132,24 +132,24 @@ The generator learns to synthesize realistic market state trajectories, the supe
 After the three phases of training, synthetic data is generated using all samples. The results are synthetic LOB sequences that look, behave, and distribute statistically like real market data.
 ## Results and Discussion
 The project was conducted using A100 High RAM GPU. \
-System RAM used is , VRAM used is, Disk space used is. \
-Total runtime from preprocessing to training to synthesising took 60 minutes. \
+System RAM used was 18.2/167.1 GB, VRAM used was 8.5GB/80GB and Disk space used is 39.7/235.7 GB. \
+Total runtime from preprocessing to training to synthesising took 57 minutes. \
 
 _Figure 1: KL Divergence, generated and real spread on the left and midprice return on the right_
-![alt text](image-1.png)
+![alt text](image-5.png)
 _Figure 2: SSIM between heatmaps of generated vs real LOB depth snapshots_
-![alt text](image-2.png)
+![alt text](image-6.png)
 _Figure 3: 5 representative heatmap visualisation of generated vs real LOBs_
-![alt text](image-3.png)
-![alt text](image-4.png)
+![alt text](image-7.png)
+![alt text](image-8.png)
 
-Figure 1 shows that the KL divergence for spread is 1.1093 while KL divergence for midprice return is 6.1625. In the real world, midprice return are typically non-Gaussian, heavy-tailed, skewed and contains high volatility while bid-ask pricing spread are usually bounded, low variance, and near discrete tick multiples. This makes it easier for TimeGAN to learn and reproduce spread as opposed to midprice returns which is seen in the higher KL divergence in midprice returns.
+Figure 1 shows that the KL divergence for spread is 1.0614 while KL divergence for midprice return is 8.6134. In the real world, midprice return are typically non-Gaussian, heavy-tailed, skewed and contains high volatility while bid-ask pricing spread are usually bounded, low variance, and near discrete tick multiples. This makes it easier for TimeGAN to learn and reproduce spread as opposed to midprice returns which is seen in the higher KL divergence in midprice returns.
 
-Figure 2 indicates that the mean SSIM is 0.9935. Given that an SSIM of 1 indicates a perfect match, the generated image is a very accurate representation of the original real data. Meanwhile, Figure 3 shows 5 representative heatmap visualisation of generated vs real LOBs randomly selected. The generated LOB with the highest SSIM is sample 219517 with an SSIM of 0.952 while the lowest scoring SSIM is sample 33649 with an SSIM of 0.518. The other three samples excluding the highest and lowest SSIM range from 0.857 to 0.924. Out of the five samples taken, the SSIM average was approximately 0.831. This achieved the visual similarity goal of SSIM being greater than 0.6 which suggests that the generated LOBs are visually similar to the real LOBs.  
+Figure 2 indicates that the mean SSIM is 0.9932. Given that an SSIM of 1 indicates a perfect match, the generated image is a very accurate representation of the original real data. Meanwhile, Figure 3 shows 5 representative heatmap visualisation of generated vs real LOBs randomly selected. The generated LOB with the highest SSIM is sample 219517 with an SSIM of 0.952 while the lowest scoring SSIM is sample 33649 with an SSIM of 0.518. The other three samples excluding the highest and lowest SSIM range from 0.857 to 0.924. Out of the five samples taken, the SSIM average was approximately 0.831. This achieved the visual similarity goal of SSIM being greater than 0.6 which suggests that the generated LOBs are visually similar to the real LOBs.  
 
 ## Conclusion
 The TimeGAN was relatively accurate in its heatmaps of generated vs real LOBs based on the SSIM metric. However, the KL divergence was unable to reach 0.1, with the closest being 1.1093 from ask-bid spread. 
-Potential improvements include decreasing the KL divergence to be less than 0.1 by . 
+Potential improvements to decrease the KL divergence to 0.1 includes replacing RNNs with transformer encoder to improve realism and coherence, using adaptive learning rates, adding feature matching loss and introducing temporal consistency penalty. 
 
 ## References
 datacamp. (2024, January 4). What is Normalization in Machine Learning? A Comprehensive Guide to Data Rescaling. Retrieved from datacamp: https://www.datacamp.com/tutorial/normalization-in-machine-learning
