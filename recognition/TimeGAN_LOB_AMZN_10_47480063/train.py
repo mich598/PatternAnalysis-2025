@@ -59,7 +59,7 @@ def main ():
     parameters['num_layer'] = 2 
     parameters['batch_size'] = 128
     parameters['iterations'] = 5000
-    parameters['iterations_supervise'] = 8000
+    parameters['iterations_supervise'] = 4000
     parameters['lr_supervised'] = 2e-4
 
     generated_data = timegan(ori_data, parameters)

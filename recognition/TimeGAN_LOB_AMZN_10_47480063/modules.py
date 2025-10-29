@@ -105,7 +105,6 @@ class Supervisor(nn.Module):
         )
         self.fc = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
-            nn.Dropout(0.1),
             nn.Sigmoid(),
         )
 
@@ -166,7 +165,7 @@ def timegan(ori_data, parameters, device=None):
     beta1, beta2 = 0.4, 0.9
     lambda_stats = 300.0
     inst_noise_std = 0.03
-    real_label_smooth = 0.9
+    real_label_smooth = 0.85
 
     # networks
     embedder = Embedder(module_name, dim, hidden_dim, num_layers).to(device)
@@ -182,7 +181,7 @@ def timegan(ori_data, parameters, device=None):
     E_optimizer = optim.Adam(
         list(embedder.parameters()) + list(recovery.parameters()), lr=lr, betas=(beta1, beta2)
     )
-    D_optimizer = optim.Adam(discriminator.parameters(), lr=lr * 0.5, betas=(beta1, beta2))
+    D_optimizer = optim.Adam(discriminator.parameters(), lr=lr * 0.2, betas=(beta1, beta2))
     G_optimizer = optim.Adam(
         list(generator.parameters()) + list(supervisor.parameters()), lr=lr, betas=(beta1, beta2)
     )
@@ -216,10 +215,9 @@ def timegan(ori_data, parameters, device=None):
             print(f"step:{itt}/{iterations}, e_loss:{np.sqrt(loss.item()):.4f}")
     print("Finish Embedding Network Training")
 
-    print("Start Supervised Loss Training (fast)")
-
+    print("Start Supervised Loss Training")
     # Use a dedicated optimizer for Supervisor only (not G) to focus learning.
-    S_optimizer = optim.Adam(list(supervisor.parameters()), lr=parameters.get("lr_supervised", 1e-3), betas=(0.4, 0.9))
+    S_optimizer = optim.Adam(list(supervisor.parameters()), lr=parameters.get("lr_supervised", 2e-3), betas=(0.4, 0.9))
 
     def masked_mse(a, b, m):
         # a,b: (B,T,H), m: (B,T,1) float {0,1}
@@ -254,6 +252,23 @@ def timegan(ori_data, parameters, device=None):
 
     print("Finish Supervised Training")
 
+    print("Extra fine-tuning for Supervisor alignment")
+    for itt in range(1000):
+        X_mb, T_mb = batch_generator(ori_data_norm, ori_time, batch_size)
+        X_mb_t, T_mb_t, mask = to_torch(X_mb, T_mb)
+        embedder.eval()
+        with torch.no_grad():
+            H_real = embedder(X_mb_t)
+        supervisor.train()
+        S_optimizer.zero_grad()
+        H_pred = supervisor(H_real)
+        valid = sequence_mask(T_mb_t - 1, max_len=max_seq_len - 1, device=device).unsqueeze(-1).float()
+        loss_s = masked_mse(H_real[:, 1:, :], H_pred[:, :-1, :], valid)
+        loss_s.backward()
+        torch.nn.utils.clip_grad_norm_(supervisor.parameters(), 1.0)
+        S_optimizer.step()
+    print("Finished fine-tuning supervisor.")
+
     # -------------------------
     # 3. Joint Training (simplified, TF-style)
     # -------------------------
@@ -264,7 +279,7 @@ def timegan(ori_data, parameters, device=None):
         # -------------------------
         # Generator/Embedder training (twice per outer iter)
         # -------------------------
-        for kk in range(2):
+        for kk in range(3):
             # Mini-batch
             X_mb, T_mb = batch_generator(ori_data_norm, ori_time, batch_size)
             X_mb_t, T_mb_t, mask = to_torch(X_mb, T_mb)
@@ -306,7 +321,7 @@ def timegan(ori_data, parameters, device=None):
             g_loss_v = mean_diff + std_diff
 
             # total generator loss (match original weighting)
-            total_g_loss = g_loss_u + gamma * g_loss_u_e + 100.0 * torch.sqrt(g_loss_s + 1e-8) + 100.0 * g_loss_v
+            total_g_loss = 1.5 * (g_loss_u + gamma * g_loss_u_e) + 100.0 * torch.sqrt(g_loss_s + 1e-8) + 100.0 * g_loss_v
 
             total_g_loss.backward()
             torch.nn.utils.clip_grad_norm_(list(generator.parameters()) + list(supervisor.parameters()), 1.0)
@@ -347,10 +362,11 @@ def timegan(ori_data, parameters, device=None):
         Z_mb_t = torch.tensor(Z_mb, dtype=torch.float32, device=device)
 
         discriminator.train()
+        noise_std = 0.05
         with torch.no_grad():
-            H_real = embedder(X_mb_t)
-            E_hat  = generator(Z_mb_t)
-            H_hat  = supervisor(E_hat)
+            H_real = embedder(X_mb_t) + noise_std * torch.randn_like(H_real)
+            E_hat  = generator(Z_mb_t) + noise_std * torch.randn_like(E_hat)
+            H_hat  = supervisor(E_hat) + noise_std * torch.randn_like(H_hat)
 
         D_real   = discriminator(H_real)
         D_fake   = discriminator(H_hat)
@@ -359,14 +375,33 @@ def timegan(ori_data, parameters, device=None):
         labels_real = torch.ones_like(D_real, device=device) * real_label_smooth
         labels_fake = torch.zeros_like(D_fake, device=device)
 
+        # --- Label smoothing and flipping ---
+        flip_prob = 0.05  # 5% chance to swap real/fake labels
+        if torch.rand(1).item() < flip_prob:
+            labels_real, labels_fake = labels_fake, labels_real
+
+        def gradient_penalty(D, real, fake):
+            alpha = torch.rand(real.size(0), 1, 1, device=real.device)
+            interp = (alpha * real + (1 - alpha) * fake).requires_grad_(True)
+            out = D(interp)
+            grad = torch.autograd.grad(outputs=out, inputs=interp,
+                                    grad_outputs=torch.ones_like(out),
+                                    create_graph=True, retain_graph=True, only_inputs=True)[0]
+            return ((grad.norm(2, dim=[1,2]) - 1) ** 2).mean()
+
         d_loss_real   = (bce_logits(D_real,   labels_real) * mask).sum() / mask.sum().clamp_min(1.0)
         d_loss_fake   = (bce_logits(D_fake,   labels_fake) * mask).sum() / mask.sum().clamp_min(1.0)
         d_loss_fake_e = (bce_logits(D_fake_e, labels_fake) * mask).sum() / mask.sum().clamp_min(1.0)
-        d_loss = d_loss_real + d_loss_fake + gamma * d_loss_fake_e
+
+        gp_loss = 10.0 * gradient_penalty(discriminator, H_real, H_hat)
+        d_loss = d_loss_real + d_loss_fake + gamma * d_loss_fake_e + gp_loss
 
         step_d_loss = d_loss.detach().item()
 
-        if step_d_loss > 0.15:
+        if step_d_loss < 0.5:  # discriminator already strong enough
+            continue  # skip update
+
+        if itt % 2 == 0 and step_d_loss > 0.15:
             D_optimizer.zero_grad()
             d_loss.backward()
             torch.nn.utils.clip_grad_norm_(discriminator.parameters(), 1.0)
@@ -386,7 +421,6 @@ def timegan(ori_data, parameters, device=None):
             )
 
     print("Finish Joint Training")
-
 
     # synthesize
     Z_mb = random_generator(no, z_dim, ori_time, max_seq_len)
