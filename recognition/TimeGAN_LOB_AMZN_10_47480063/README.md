@@ -26,7 +26,9 @@ The recovery module is the decoder part of the autoencoder. It reconstructs the 
 The generator module learns to produce fake latent representations that look like the real latent space H. Instead of directly generating data, it generates latent sequences which are decoded by the Recovery Module. It is trained adversarial to fool the discriminator module and also supervised by the Supervisor to preserve time dependencies
 ### 4. Supervisor
 The supervisor teaches the generator to produce sequences that follow realistic temporal dynamics.
-$$ L_s=|(|H_(t+1)-S(H_t )|)|^2 $$
+$$ 
+L_s=|(|H_(t+1)-S(H_t )|)|^2 
+$$
 This acts as a temporal consistency constraint – the generator learns not just to produce realistic points but realistic transitions between timesteps
 ### 5. Discriminator
 The discriminator enforces realism in the latent space. It tries to distinguish between the real latent sequences (from the embedder) and fake latent sequences (from the generator and supervisor)
@@ -45,7 +47,6 @@ The discriminator enforces realism in the latent space. It tries to distinguish 
 	import matplotlib.pyplot as plt
 	from skimage.metric import structural_similarity as ssim
 	from scipy.stats import entropy
- 
 ## Hyperparameters
 * **hidden_dim** : number of hidden units in GRU layers
 * **num_layers** : number of layers in GRU
@@ -58,7 +59,6 @@ The discriminator enforces realism in the latent space. It tries to distinguish 
 * **lambda_stats** : statistics loss weight
 * **inst_noise_std** : instance noise added to discriminator inputs to reduce memorisation
 * **real_label_smooth** : label smoothing for real labels (improves stability)
-
 ## Training Process
 ### Before Training
 Min-max normalisation was utilised to transform data during preprocessing. Min-max normalisation rescales the data such that all features lie between 0 and 1. This helps models train faster and prevent large scale data (higher bid/ask prices) from dominating smaller scale such as lower ask/bid prices which reduces skewness and bias in learning. 
@@ -66,17 +66,17 @@ $$ x'=(x-x_m)/(x_max-x_min ) $$
 Firstly the vector of minimum values per feature is calculated. The data is then shifted such that the smallest value becomes 0. The vector of maximum values per feature is calculated and each feature is divided by the corresponding maximum to scale to obtain normalised data in the range [0, 1].
 ### During Training
 A key element used for the optimizers is the Adam Optimiser, which was utilised for Embedder, Generator and Supervisor modules. Adam (Adaptive Moment Estimation) optimizer combines the advantages of Momentum and RMSprop techniques to adjust learning rates during training (GeeksforGeeks, 2025). Momentum accelerates the gradient descent process by incorporating a weighted moving average which allows the algorithm to converge faster. Meanwhile, RMSprop uses an exponentially weighted moving average of squared gradients, which overcomes the problem of diminishing learning rates. 
-
-$$ w_(t+1)=w_t-α (m_t )/(√((v_t ))+ϵ) $$
-
+$$
+w_{t+1} = w_t - \alpha \frac{m_t}{\sqrt{v_t} + \epsilon}
+$$
 The learning rate α used for TimeGAN was 0.00005 while the decay rates β_1 and  β_2 are 0.4 and 0.9 respectively.
 
 Loss functions were based on binary cross entropy (BCE) loss and means square error (MSE) loss functions since BCE loss strongly penalises confident misclassification while MSE loss penalises squared difference between predicted and true stock price values. BCE loss is used in discriminator and generator adversarial training by making synthetic sequences statistically indistinguishable from real trades. MSE is used in reconstruction and supervised steps to measure how well the generator and embedder reconstructs real sequences.
 
 TimeGAN utilises three stages of training:
-* 1. Embedded Network Training
-* 2. Supervised Loss Training
-* 3. Joint Training
+* Embedded Network Training
+* Supervised Loss Training
+* Joint Training
 
 ### Embedding Network Training
 The embedded training is the first phase of training where the model learns a meaningful latent representation of the LOB sequences. Before adversarial training begins, the model must learn to encode and reconstruct like an autoencoder data via the embedder and recovery module respectively. Firstly, real sequences are fed through the autoencoder to learn meaningful encoding and reconstruction. The MSE is computed to minimise differences between original and reconstructed data. Backpropagation and weights are updated to optimise embedder and recovery jointly and the process repeats until the reconstruction error is small. In summary, this phase allows the model to understand the structure of real market dynamics before it generates synthetic ones. This phase takes approximately 5 minutes to complete 5000 epochs with a training loss of 0.2953. 

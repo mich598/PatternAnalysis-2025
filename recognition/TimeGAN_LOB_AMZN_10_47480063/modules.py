@@ -123,11 +123,9 @@ class Discriminator(nn.Module):
         self.fc = nn.Linear(hidden_dim, 1)
 
     def forward(self, h):
-        with torch.backends.cudnn.flags(enabled=False):
-            out, _ = self.rnn(h)
+        out, _ = self.rnn(h)  # CuDNN ok here
         out = self.fc(out)
         return out
-
 
 # -------------------------
 # TimeGAN training
@@ -181,13 +179,8 @@ def timegan(ori_data, parameters, device=None):
     E_optimizer = optim.Adam(
         list(embedder.parameters()) + list(recovery.parameters()), lr=lr, betas=(beta1, beta2)
     )
-    D_optimizer = optim.Adam(discriminator.parameters(), lr=lr * 0.2, betas=(beta1, beta2))
-    G_optimizer = optim.Adam(
-        list(generator.parameters()) + list(supervisor.parameters()), lr=lr, betas=(beta1, beta2)
-    )
-    GS_optimizer = optim.Adam(
-        list(generator.parameters()) + list(supervisor.parameters()), lr=lr_supervised, betas=(beta1, beta2)
-    )
+    D_optimizer = optim.Adam(discriminator.parameters(), lr=lr * 0.1, betas=(0.4, 0.9))
+    G_optimizer = optim.Adam(list(generator.parameters()) + list(supervisor.parameters()), lr=lr * 2.0, betas=(0.4, 0.9))
 
     bce_logits = nn.BCEWithLogitsLoss(reduction="none")
     mse_loss = nn.MSELoss(reduction="none")
@@ -274,12 +267,16 @@ def timegan(ori_data, parameters, device=None):
     # -------------------------
     print("Start Joint Training")
 
+    # --- EMA tracking for smoothed logging ---
+    ema_g_loss_u = None
+    decay = 0.9  # 0.9–0.95 works best
+
     for itt in range(iterations):
 
         # -------------------------
         # Generator/Embedder training (twice per outer iter)
         # -------------------------
-        for kk in range(3):
+        for kk in range(2):
             # Mini-batch
             X_mb, T_mb = batch_generator(ori_data_norm, ori_time, batch_size)
             X_mb_t, T_mb_t, mask = to_torch(X_mb, T_mb)
@@ -321,7 +318,7 @@ def timegan(ori_data, parameters, device=None):
             g_loss_v = mean_diff + std_diff
 
             # total generator loss (match original weighting)
-            total_g_loss = 1.5 * (g_loss_u + gamma * g_loss_u_e) + 100.0 * torch.sqrt(g_loss_s + 1e-8) + 100.0 * g_loss_v
+            total_g_loss = 1.0 * (g_loss_u + gamma * g_loss_u_e) + 100.0 * torch.sqrt(g_loss_s + 1e-8) + 100.0 * g_loss_v
 
             total_g_loss.backward()
             torch.nn.utils.clip_grad_norm_(list(generator.parameters()) + list(supervisor.parameters()), 1.0)
@@ -329,6 +326,13 @@ def timegan(ori_data, parameters, device=None):
 
             # keep last values for logging
             step_g_loss_u  = g_loss_u.detach().item()
+
+            # --- EMA smoothing for generator unsupervised loss ---
+            if ema_g_loss_u is None:
+                ema_g_loss_u = step_g_loss_u
+            else:
+                ema_g_loss_u = decay * ema_g_loss_u + (1 - decay) * step_g_loss_u
+
             step_g_loss_s  = g_loss_s.detach().item()
             step_g_loss_v  = g_loss_v.detach().item()
 
@@ -362,15 +366,15 @@ def timegan(ori_data, parameters, device=None):
         Z_mb_t = torch.tensor(Z_mb, dtype=torch.float32, device=device)
 
         discriminator.train()
-        noise_std = 0.05
+        noise_std = max(0.01, 0.05 * (1 - itt / iterations))
         with torch.no_grad():
             H_real = embedder(X_mb_t) + noise_std * torch.randn_like(H_real)
             E_hat  = generator(Z_mb_t) + noise_std * torch.randn_like(E_hat)
             H_hat  = supervisor(E_hat) + noise_std * torch.randn_like(H_hat)
 
-        D_real   = discriminator(H_real)
-        D_fake   = discriminator(H_hat)
-        D_fake_e = discriminator(E_hat)
+        D_real = torch.clamp(discriminator(H_real), -10, 10)
+        D_fake = torch.clamp(discriminator(H_hat), -10, 10)
+        D_fake_e = torch.clamp(discriminator(E_hat), -10, 10)
 
         labels_real = torch.ones_like(D_real, device=device) * real_label_smooth
         labels_fake = torch.zeros_like(D_fake, device=device)
@@ -393,7 +397,12 @@ def timegan(ori_data, parameters, device=None):
         d_loss_fake   = (bce_logits(D_fake,   labels_fake) * mask).sum() / mask.sum().clamp_min(1.0)
         d_loss_fake_e = (bce_logits(D_fake_e, labels_fake) * mask).sum() / mask.sum().clamp_min(1.0)
 
-        gp_loss = 10.0 * gradient_penalty(discriminator, H_real, H_hat)
+        # GP term is expensive, half GP computation
+        if itt % 2 == 0:
+            gp_loss = 2.0 * gradient_penalty(discriminator, H_real, H_hat)
+        else:
+            gp_loss = 0.0
+
         d_loss = d_loss_real + d_loss_fake + gamma * d_loss_fake_e + gp_loss
 
         step_d_loss = d_loss.detach().item()
@@ -414,7 +423,7 @@ def timegan(ori_data, parameters, device=None):
             print(
                 f"step: {itt}/{iterations}, "
                 f"d_loss: {np.round(step_d_loss,4)}, "
-                f"g_loss_u: {np.round(step_g_loss_u,4)}, "
+                f"g_loss_u: {np.round(ema_g_loss_u,4)}, "
                 f"g_loss_s: {np.round(np.sqrt(step_g_loss_s),4)}, "
                 f"g_loss_v: {np.round(step_g_loss_v,4)}, "
                 f"e_loss_t0: {np.round(np.sqrt(step_e_loss_t0),4)}"

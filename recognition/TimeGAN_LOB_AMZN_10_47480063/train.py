@@ -57,7 +57,7 @@ def main ():
     parameters['module'] = 'gru'
     parameters['hidden_dim'] = 32
     parameters['num_layer'] = 2 
-    parameters['batch_size'] = 128
+    parameters['batch_size'] = 64
     parameters['iterations'] = 5000
     parameters['iterations_supervise'] = 4000
     parameters['lr_supervised'] = 2e-4
