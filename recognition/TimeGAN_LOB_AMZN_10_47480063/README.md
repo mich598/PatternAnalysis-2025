@@ -1,10 +1,11 @@
 # Generative Time Series Model using TimeGAN 
 ## Context
-Time series data is a collection of numerical data points observed or measured in a specific order over a continuous period, such as minutes, days, months, or years. This chronological order allows for the identification of trends, patterns, and seasonality, making it useful for forecasting and making informed decisions. An example of time series data includes stock data such as limit order book (events), where buy and sell orders can fluctuate based on the time during the day. Limit order books (LOB) are split into  ask and bid prices as well as the quantity, with the oldest book at the top while the most recent book sits at the bottom. For this project, the Amazon level 10 orderbook will be used, with ask prices and the required quantity shown from Column 0 to Column 20 (from lowest to highest price) while bid prices and the respective quantity are displayed from Column 21 to column 40 (from highest to lowest price). 
+Time series data is a collection of numerical data points observed or measured in a specific order over a continuous period, such as minutes, days, months, or years. This chronological order allows for the identification of trends, patterns, and seasonality, making it useful for forecasting and making informed decisions. An example of time series data includes stock data such as limit order book (events), where buy and sell orders can fluctuate based on the time during the day. Limit order books (LOB) are split into  ask and bid prices as well as the quantity, with the oldest book at the top while the most recent book sits at the bottom. For this project, the Amazon level 10 orderbook will be used, with ask prices and volume shown from Column 0 to Column 20 (from lowest to highest price) while bid prices and volume are displayed from Column 21 to column 40 (from highest to lowest price). 
 ## Limit Book Order (LOB) Problem Space
-In the real world, high quality LOB are extremely valuable since they are proprietary, expensive, and limited to large institutions. Due to privacy and confidentiality issues, real orderbook data cannot be shared freely from fear of potentially exposing trading strategies. Regulatory constraint can also restricts data sharing across different jurisdictions and country regulations. Training machine learning models for price prediction and market simulation often require a lot of realistic data, which cannot always be provided. Therefore, synthetic LOB generation provides unlimited, privacy preserving and statistically consistent sequences for model training, testing and simulation. 
+In the real world, high quality LOB are extremely valuable since they are proprietary, expensive, and limited to large institutions. Due to privacy and confidentiality issues, real orderbook data cannot be shared freely from fear of potentially exposing trading strategies. Regulatory constraint can also restricts data sharing across different jurisdictions and country regulations. Training machine learning models for price prediction and market simulation often require a lot of realistic data, which cannot always be provided. Therefore, synthetic LOB generation provides unlimited, privacy preserving and statistically consistent sequences for model training, testing and simulation. Modelling and simulating LOBs is quite often necessary for calibrating and fine-tuning the automated trading strategies developed in algorithmic trading research (Konark Jain, Nick Firoozye, Jonathan Kochems, Philip Treleaven, 2023).
 ## Description of Algorithm
-TimeGAN was implemented to generate new realistic time series data for Amazon LOBs. It is trained adversarial and jointly via a learned embedding space with supervised and unsupervised losses.  It combines supervised sequence modelling (RNN autoencoding) with unsupervised adversarial training (GAN) to generate realistic time-series sequences that preserve temporal dynamics. This ensures latent space consistency as the real and synthetic sequences share the same hidden representation space. 
+TimeGAN was implemented to generate new realistic time series data for Amazon LOBs. It is trained adversarial and jointly via a learned embedding space with supervised and unsupervised losses.  It combines supervised sequence modelling (RNN autoencoding) with unsupervised adversarial training (GAN) to generate realistic time-series sequences that preserve temporal dynamics. This ensures latent space consistency as the real and synthetic sequences share the same hidden representation space (Jinsung Yoon, Daniel Jarrett, Mihaela van der Schaar, 2019).
+
 The model uses RNNs (with GRU implementation) to learn temporal dependencies between order flow reactions. The model employs an autoencoder with the embedding module as the encoder stage and recovery module as the decoder stage to learn compressed latent representation of corelated variables. Supervised next step predictions enforces temporal coherence instead of point wise similarity which helps identify trends in ask price and bid prices. This helps capture a more realistic view of the data to create sufficient synthetic LOBs. 
 ## General Architecture
 The model is divided into 5 main modules: \
@@ -28,7 +29,7 @@ The generator module learns to produce fake latent representations that look lik
 The supervisor teaches the generator to produce sequences that follow realistic temporal dynamics.
 
 $$ 
-L_s=|(|H_(t+1)-S(H_t )|)|^2 
+{L_s}=|(|H_{t+1}-S{H_t}|)|^2 
 $$
 
 This acts as a temporal consistency constraint – the generator learns not just to produce realistic points but realistic transitions between timesteps
@@ -63,7 +64,7 @@ The discriminator enforces realism in the latent space. It tries to distinguish 
 * **real_label_smooth** : label smoothing for real labels (improves stability)
 ## Training Process
 ### Before Training
-Min-max normalisation was utilised to transform data during preprocessing. Min-max normalisation rescales the data such that all features lie between 0 and 1. This helps models train faster and prevent large scale data (higher bid/ask prices) from dominating smaller scale such as lower ask/bid prices which reduces skewness and bias in learning.
+Min-max normalisation was utilised to transform data during preprocessing. Min-max normalisation rescales the data such that all features lie between 0 and 1. This helps models train faster and prevent large scale data (higher bid/ask prices) from dominating smaller scale such as lower ask/bid prices which reduces skewness and bias in learning.This ensures that each feature contributes proportionally to the model's learning process (datacamp, 2024).
 
 $$ 
 x'=\frac{x-x_{min}}{x_{max}-x_{min}} 
@@ -107,3 +108,39 @@ Discriminator training allows the discriminator to better separate real and fake
 
 This phase takes approximately 50 minutes to compute 5000 epochs with d_loss =  (discriminator accuracy), g_loss_u = (adversarial success), g_loss_s = (temporal consistency), g_loss_v = (moment matching), and e_loss_t0 = (reconstruction quality). The generator learns to synthesize realistic market state trajectories, the supervisor enforces temporal realism so that prices and volumes evolve smoothly, the discriminator ensures fake order-book sequences follow the same patterns as the real data and the moment-matching term keeps means, spreads, and volatilities aligned with historical statistics. 
 After the three phases of training, synthetic data is generated using all samples. The results are synthetic LOB sequences that look, behave, and distribute statistically like real market data.
+## Results and Discussion
+The project was conducted using A100 High RAM GPU. \
+System RAM used is , VRAM used is, Disk space used is. \
+Total runtime from preprocessing to training to synthesising took 80 minutes. \
+
+_Figure 1: KL Divergence, generated and real spread on the left and midprice return on the right_
+![alt text](image-1.png)
+_Figure 2: SSIM between heatmaps of generated vs real LOB depth snapshots_
+![alt text](image-2.png)
+_Figure 3: 5 representative heatmap visualisation of generated vs real LOBs_
+![alt text](image-3.png)
+![alt text](image-4.png)
+
+Figure 1 shows that the KL divergence for spread is 1.1093 while KL divergence for midprice return is 6.1625. In the real world, midprice return are typically non-Gaussian, heavy-tailed, skewed and contains high volatility while bid-ask pricing spread are usually bounded, low variance, and near discrete tick multiples. This makes it easier for TimeGAN to learn and reproduce spread as opposed to midprice returns which is seen in the higher KL divergence in midprice returns.
+
+Figure 2 indicates that the mean SSIM is 0.9935. Given that an SSIM of 1 indicates a perfect match, the generated image is a very accurate representation of the original real data. Meanwhile, Figure 3 shows 5 representative heatmap visualisation of generated vs real LOBs randomly selected. The generated LOB with the highest SSIM is sample 219517 with an SSIM of 0.952 while the lowest scoring SSIM is sample 33649 with an SSIM of 0.518. The other three samples excluding the highest and lowest SSIM range from 0.857 to 0.924. Out of the five samples taken, the SSIM average was approximately 0.831. This achieved the visual similarity goal of SSIM being greater than 0.6 which suggests that the generated LOBs are visually similar to the real LOBs.  
+
+## Conclusion
+The TimeGAN was relatively accurate in its heatmaps of generated vs real LOBs based on the SSIM metric. However, the KL divergence was unable to reach 0.1, with the closest being 1.1093 from ask-bid spread. 
+Potential improvements include ...
+
+## References
+datacamp. (2024, January 4). What is Normalization in Machine Learning? A Comprehensive Guide to Data Rescaling. Retrieved from datacamp: https://www.datacamp.com/tutorial/normalization-in-machine-learning
+
+GeeksforGeeks. (2025, October 04). What is Adam Optimizer? Retrieved from GeeksforGeeks: https://www.geeksforgeeks.org/deep-learning/adam-optimizer/
+
+Jinsung Yoon, Daniel Jarrett, Mihaela van der Schaar. (2019). Time-series Generative Adversarial Networks. Vancouver.
+
+Konark Jain, Nick Firoozye, Jonathan Kochems, Philip Treleaven. (2023). Limit Order Book Simulations: A Review. London: University College London.
+
+Learning, A. M. (2025). Loss Functions for Autoencoders (MSE, BCE). Retrieved from ApX Machine Learning: https://apxml.com/courses/introduction-autoencoders-feature-learning/chapter-3-how-autoencoders-learn/autoencoder-loss-functions
+
+
+
+
+

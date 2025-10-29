@@ -123,7 +123,7 @@ class Discriminator(nn.Module):
         self.fc = nn.Linear(hidden_dim, 1)
 
     def forward(self, h):
-        out, _ = self.rnn(h)  # CuDNN ok here
+        out, _ = self.rnn(h)
         out = self.fc(out)
         return out
 
@@ -216,6 +216,11 @@ def timegan(ori_data, parameters, device=None):
         # a,b: (B,T,H), m: (B,T,1) float {0,1}
         return ((a - b) ** 2 * m).sum() / m.sum().clamp_min(1.0)
 
+    def masked_mean(x, m):
+        # x: (B,T,1 or H); m: (B,T,1) in {0,1} float
+        return (x * m).sum() / m.sum().clamp_min(1.0)
+
+
     iterations_supervise = parameters.get("iterations_supervise", iterations * 4)  # give it more steps
 
     for itt in range(iterations_supervise):
@@ -292,14 +297,12 @@ def timegan(ori_data, parameters, device=None):
             H_hat = supervisor(E_hat)          # (B, T, H)
             X_hat = recovery(H_hat)            # (B, T, D)
 
-            # discriminator logits for fake paths
-            D_fake   = discriminator(H_hat)    # (B, T, 1)
-            D_fake_e = discriminator(E_hat)    # (B, T, 1)
+            D_fake   = discriminator(H_hat)
+            D_fake_e = discriminator(E_hat)
 
-            # G_loss_U (unsupervised/adversarial on D)
-            ones = torch.ones_like(D_fake, device=device)
-            g_loss_u   = (bce_logits(D_fake,   ones) * mask).sum() / mask.sum().clamp_min(1.0)
-            g_loss_u_e = (bce_logits(D_fake_e, ones) * mask).sum() / mask.sum().clamp_min(1.0)
+            # Hinge generator loss (masked)
+            g_loss_u   = -masked_mean(D_fake,   mask)
+            g_loss_u_e = -masked_mean(D_fake_e, mask)
 
             # G_loss_S (supervised: next-step in latent space)
             with torch.no_grad():
@@ -362,27 +365,26 @@ def timegan(ori_data, parameters, device=None):
         # Discriminator training (only if needed)
         # -------------------------
         X_mb, T_mb = batch_generator(ori_data_norm, ori_time, batch_size)
+        X_mb_t, T_mb_t, mask = to_torch(X_mb, T_mb)  # <-- needed for masked hinge
         Z_mb = random_generator(batch_size, z_dim, T_mb, max_seq_len)
         Z_mb_t = torch.tensor(Z_mb, dtype=torch.float32, device=device)
 
         discriminator.train()
         noise_std = max(0.01, 0.05 * (1 - itt / iterations))
+
         with torch.no_grad():
-            H_real = embedder(X_mb_t) + noise_std * torch.randn_like(H_real)
-            E_hat  = generator(Z_mb_t) + noise_std * torch.randn_like(E_hat)
-            H_hat  = supervisor(E_hat) + noise_std * torch.randn_like(H_hat)
+            H_real = embedder(X_mb_t)
+            E_hat  = generator(Z_mb_t)
+            H_hat  = supervisor(E_hat)
 
-        D_real = torch.clamp(discriminator(H_real), -10, 10)
-        D_fake = torch.clamp(discriminator(H_hat), -10, 10)
-        D_fake_e = torch.clamp(discriminator(E_hat), -10, 10)
+            noise = noise_std
+            H_real = H_real + noise * torch.randn_like(H_real)
+            E_hat  = E_hat  + noise * torch.randn_like(E_hat)
+            H_hat  = H_hat  + noise * torch.randn_like(H_hat)
 
-        labels_real = torch.ones_like(D_real, device=device) * real_label_smooth
-        labels_fake = torch.zeros_like(D_fake, device=device)
-
-        # --- Label smoothing and flipping ---
-        flip_prob = 0.05  # 5% chance to swap real/fake labels
-        if torch.rand(1).item() < flip_prob:
-            labels_real, labels_fake = labels_fake, labels_real
+        D_real = discriminator(H_real)
+        D_fake = discriminator(H_hat)
+        D_fake_e = discriminator(E_hat)
 
         def gradient_penalty(D, real, fake):
             alpha = torch.rand(real.size(0), 1, 1, device=real.device)
@@ -393,24 +395,21 @@ def timegan(ori_data, parameters, device=None):
                                     create_graph=True, retain_graph=True, only_inputs=True)[0]
             return ((grad.norm(2, dim=[1,2]) - 1) ** 2).mean()
 
-        d_loss_real   = (bce_logits(D_real,   labels_real) * mask).sum() / mask.sum().clamp_min(1.0)
-        d_loss_fake   = (bce_logits(D_fake,   labels_fake) * mask).sum() / mask.sum().clamp_min(1.0)
-        d_loss_fake_e = (bce_logits(D_fake_e, labels_fake) * mask).sum() / mask.sum().clamp_min(1.0)
+        # Hinge discriminator losses (masked)
+        d_loss_real   = masked_mean(torch.relu(1.0 - D_real),   mask)
+        d_loss_fake   = masked_mean(torch.relu(1.0 + D_fake),   mask)
+        d_loss_fake_e = masked_mean(torch.relu(1.0 + D_fake_e), mask)
 
-        # GP term is expensive, half GP computation
-        if itt % 2 == 0:
-            gp_loss = 2.0 * gradient_penalty(discriminator, H_real, H_hat)
-        else:
-            gp_loss = 0.0
+        d_loss = d_loss_real + d_loss_fake + gamma * d_loss_fake_e
 
-        d_loss = d_loss_real + d_loss_fake + gamma * d_loss_fake_e + gp_loss
+        # modest gradient penalty
+        if itt % 4 == 0:
+            gp_loss = 0.3 * gradient_penalty(discriminator, H_real, H_hat)
+            d_loss = d_loss + gp_loss
 
         step_d_loss = d_loss.detach().item()
 
-        if step_d_loss < 0.5:  # discriminator already strong enough
-            continue  # skip update
-
-        if itt % 2 == 0 and step_d_loss > 0.15:
+        if step_d_loss > 0.05:
             D_optimizer.zero_grad()
             d_loss.backward()
             torch.nn.utils.clip_grad_norm_(discriminator.parameters(), 1.0)
