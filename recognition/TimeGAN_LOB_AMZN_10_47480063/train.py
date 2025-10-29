@@ -27,25 +27,29 @@ from dataset import real_data_loading
 # 3. Metrics
 from predict import visualization
 
-def main ():
-    """Main function for timeGAN experiments.
+import torch, gc, os
+gc.collect()
+torch.cuda.empty_cache()
+torch.backends.cudnn.benchmark = False
+torch.backends.cudnn.deterministic = True
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
-    Args:
-        - data_name: sine, stock, or energy
-        - seq_len: sequence length
-        - Network parameters (should be optimized for different datasets)
+def main ():
+    """
+    @params:
         - module: gru, lstm, or lstmLN
         - hidden_dim: hidden dimensions
         - num_layer: number of layers
-        - iteration: number of training iterations
         - batch_size: the number of samples in each batch
-        - metric_iteration: number of iterations for metric computation
+        - iteration: number of training iterations for embedded and joint learning
+        - iterations_supervise : number of training iterations for supervised learning
 
-    Returns:
+    @returns:
         - ori_data: original data
         - generated_data: generated synthetic data
         - metric_results: discriminative and predictive scores
     """
+    
     ## Data loading
     ori_data = real_data_loading('orderbook', 24)
 

@@ -65,7 +65,7 @@ class Embedder(nn.Module):
         out = self.norm(out)
         out = self.fc(out)
         return out
-
+    
 
 class Recovery(nn.Module):
     def __init__(self, module_name, hidden_dim, output_dim, num_layers):
@@ -148,22 +148,19 @@ def timegan(ori_data, parameters, device=None):
 
     ori_data_norm, min_val, max_val = MinMaxScaler(ori_data_np)
 
+    # hyperparameters
     hidden_dim = parameters["hidden_dim"]
     num_layers = parameters["num_layer"]
     iterations = parameters["iterations"]
     batch_size = parameters["batch_size"]
     module_name = parameters["module"]
+
     z_dim = 32
     gamma = 1
-
-    # hyperparameters
     lr = 5e-5
-    lr_supervised = parameters.get("lr_supervised", 2e-4)
+    lr_supervised = 2e-4
     iterations_supervise = parameters.get("iterations_supervise", iterations * 2)
     beta1, beta2 = 0.4, 0.9
-    lambda_stats = 300.0
-    inst_noise_std = 0.03
-    real_label_smooth = 0.85
 
     # module networks
     embedder = Embedder(module_name, dim, hidden_dim, num_layers).to(device)
@@ -182,7 +179,7 @@ def timegan(ori_data, parameters, device=None):
                              lr=lr * 3.0, betas=(0.4, 0.9))
     # Use a dedicated optimizer for Supervisor only (not G) to focus learning.
     S_optimizer = optim.Adam(list(supervisor.parameters()), 
-                             lr=parameters.get("lr_supervised", 2e-3), betas=(0.4, 0.9))
+                             lr=lr_supervised, betas=(0.4, 0.9))
 
     mse_loss = nn.MSELoss(reduction="none")
 

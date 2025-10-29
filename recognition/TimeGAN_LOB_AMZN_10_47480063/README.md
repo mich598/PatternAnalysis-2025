@@ -46,6 +46,12 @@ The discriminator enforces realism in the latent space. It tries to distinguish 
 * **predict.py**: allows visualisation of 5 representative heatmap visualisation as well as KL divergence graph and visual similarity using SSIM
 * **train.py**: contains the main function for running dataset.py for data preprocessing, modules.py for training the TimeGAN and predict.py to visualise the results
 * **utils.py**: additional helper functions required for training the TimeGAN such as train_test_divide(), rnn_cell() and batch_generator()
+## Running Instructions
+Download the orderbook dataset for Amazon LVL 10 and save it in the same directory\
+Open terminal and enter the following command:
+
+    python timegan_driver.py
+
 ## Dependencies Used 
 	import torch
 	import torch.nn as nn
@@ -54,18 +60,15 @@ The discriminator enforces realism in the latent space. It tries to distinguish 
 	import matplotlib.pyplot as plt
 	from skimage.metric import structural_similarity as ssim
 	from scipy.stats import entropy
+    import gc
+    import os
+    import time
 ## Hyperparameters
 * **hidden_dim** : number of hidden units in GRU layers
 * **num_layers** : number of layers in GRU
 * **iterations** : number of training iterations (epoch times batches)
 * **batch_size** : number of samples per batch
-* **z_dim** : dimensionality of latent noise input
-* **gamma** : supervised loss weight
-* **lr** : learning rate
-* **beta1, beta2** : momentum terms for Adam optimiser
-* **lambda_stats** : statistics loss weight
-* **inst_noise_std** : instance noise added to discriminator inputs to reduce memorisation
-* **real_label_smooth** : label smoothing for real labels (improves stability)
+* **module_name** : name of module (gru, lstm)
 ## Implementation
 ### Before Training
 ***Min Max Normalisation***\
